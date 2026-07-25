@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.1.1-cash-round";
+const SHOP_VERSION = "2.1.3-cash-scroll";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -527,6 +527,7 @@ function SaveBar({ subtotal, checkout }) {
 /* ================================== APP ==================================== */
 function App() {
   const [stage, setStage] = useState("shop");       // shop | checkout | done
+  useEffect(() => { try { window.scrollTo(0, 0); } catch (e) {} }, [stage]);  // review/checkout opens at the top, not mid-cart
   const [cart, setCart] = useState({});             // { productId: qty }
   const [q, setQ] = useState("");
 
@@ -1355,12 +1356,17 @@ function DoneScreen({ order, reset }) {
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, margin: "16px 0" }}>
           <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>1 · Cash — 5% off, pay by envelope</div>
-          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 10px", lineHeight: 1.5 }}>Your <b style={{ color: C.teal }}>5% cash discount</b> is already in the total below. Bring <b style={{ color: C.teal }}>{money(order.total)}</b> in cash at {order.fulfil === "delivery" ? "delivery" : order.fulfil === "shipping" ? "handoff" : "pickup"}.</p>
-          <ol style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
-            <li>Grab an envelope and write your <b>order #{order.orderNum}</b> and name on it.</li>
-            <li>Put <b>{money(order.total)}</b> cash inside and seal it.</li>
-            <li>Drop the envelope in the cash box — that's it, you're done.</li>
-          </ol>
+          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 10px", lineHeight: 1.5 }}>Your <b style={{ color: C.teal }}>5% cash discount</b> is already in the total below. Have <b style={{ color: C.teal }}>{money(order.total)}</b> in cash ready at {order.fulfil === "delivery" ? "delivery" : order.fulfil === "shipping" ? "handoff" : "pickup"}.</p>
+          {order.fulfil === "pickup" ? (
+            <ol style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
+              <li>Find your envelope in the envelope holder — it's already labelled with your <b>order #{order.orderNum}</b>, name, and amount owing.</li>
+              <li>Put your <b>{money(order.total)}</b> cash inside.</li>
+              <li>Drop the sealed envelope in the cash box.</li>
+              <li>Grab your order from the pickup fridge below — done!</li>
+            </ol>
+          ) : (
+            <p style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>Have your <b>{money(order.total)}</b> in cash ready and we'll handle the envelope with you at {order.fulfil === "delivery" ? "delivery" : "handoff"}.</p>
+          )}
         </div>
       )}
 
