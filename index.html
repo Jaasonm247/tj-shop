@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.3.0-recon-shop";
+const SHOP_VERSION = "2.4.0-recon-checkout";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -578,15 +578,16 @@ function App() {
     .map(([id, qty]) => ({ ...pmap[id], qty })), [cart, pmap]);
   const subtotal = useMemo(() => items.reduce((s, it) => s + it.price * it.qty, 0), [items]);
   const disc = discountFor(subtotal);
-  const discAmt = disc ? +(subtotal * disc.pct / 100).toFixed(2) : 0;
   const deliveryFee = fulfil === "shipping" ? SHIP_FEE : fulfil === "delivery" ? DELIVERY_FEE : 0;
   const vialCount = items.reduce((n, it) => n + (Number(it.qty) || 0) * (it.form === "vial" ? 1 : (it.isKit && Array.isArray(it.components) ? it.components.length : 0)), 0);
   const reconVialsChosen = vialCount > 0 ? Math.max(0, Math.min(reconQty, vialCount)) : 0;
   const reconFee = reconVialsChosen * RECON_PER_VIAL;
   const recon = reconVialsChosen > 0;
   useEffect(() => { if (recon && fulfil === "shipping") setFulfil("pickup"); }, [recon]); // reconstituted orders can't ship
-  const cashAmt = payment === "cash" ? +((subtotal * CASH_PCT) / 100).toFixed(2) : 0;
-  const rawTotal = +(subtotal - discAmt - cashAmt + deliveryFee + reconFee).toFixed(2);
+  const goods = subtotal + reconFee;
+  const discAmt = disc ? +(goods * disc.pct / 100).toFixed(2) : 0;
+  const cashAmt = payment === "cash" ? +((goods * CASH_PCT) / 100).toFixed(2) : 0;
+  const rawTotal = +(goods - discAmt - cashAmt + deliveryFee).toFixed(2);
   const total = payment === "cash" ? Math.floor(rawTotal) : rawTotal;
   const cartCount = items.reduce((s, it) => s + it.qty, 0);
 
@@ -725,7 +726,7 @@ function App() {
             fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
             pickDate={pickDate} setPickDate={setPickDate} pickupType={pickupType} setPickupType={setPickupType}
             payment={payment} setPayment={setPayment} notes={notes} setNotes={setNotes}
-            recon={recon} reconFee={reconFee} vialCount={vialCount} reconPerVial={RECON_PER_VIAL} reconVialsChosen={reconVialsChosen}
+            recon={recon} reconFee={reconFee} vialCount={vialCount} reconPerVial={RECON_PER_VIAL} reconVialsChosen={reconVialsChosen} reconQty={reconQty} setReconQty={setReconQty}
             contactOk={contactOk} addressOk={addressOk} canPlace={canPlace} submitting={submitting}
             me={me} onForget={forgetMe}
             placeOrder={placeOrder} backToShop={() => setStage("shop")}
@@ -1104,7 +1105,7 @@ function CheckoutScreen(props) {
   const { items, subtotal, disc, discAmt, cashAmt, deliveryFee, total, setQty,
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
-    recon, reconFee, vialCount, reconPerVial, reconVialsChosen,
+    recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
     contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
 
   if (items.length === 0) {
@@ -1147,6 +1148,25 @@ function CheckoutScreen(props) {
           ))}
         </div>
       </Section>
+
+      {/* Let us reconstitute it for you */}
+      {vialCount > 0 && (
+        <Section title="Reconstitution">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 150 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: C.text }}>Let us reconstitute it for you</div>
+              <div style={{ fontSize: 12.5, color: C.textDim, lineHeight: 1.4 }}>${reconPerVial}/vial — we mix it, ready to use. Pickup/delivery only.</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button type="button" aria-label="Fewer vials" onClick={() => setReconQty(Math.max(0, reconVialsChosen - 1))} style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.line}`, background: C.bg, color: C.text, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>−</button>
+              <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 17, minWidth: 22, textAlign: "center", color: reconVialsChosen > 0 ? C.teal : C.textDim }}>{reconVialsChosen}</span>
+              <button type="button" aria-label="More vials" onClick={() => setReconQty(Math.min(vialCount, reconVialsChosen + 1))} style={{ width: 36, height: 36, borderRadius: 9, border: `1px solid ${C.line}`, background: C.bg, color: C.text, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>+</button>
+              <span style={{ fontSize: 13, color: C.textDim, whiteSpace: "nowrap" }}>of {vialCount}</span>
+            </div>
+          </div>
+          {recon && <div style={{ marginTop: 8, fontFamily: MONO, fontWeight: 700, fontSize: 14, color: C.teal, textAlign: "right" }}>{reconVialsChosen} × ${reconPerVial} = {money(reconFee)}</div>}
+        </Section>
+      )}
 
       {/* Don't forget — supplies add-on */}
       <Section title="Don't forget">
@@ -1263,17 +1283,6 @@ function CheckoutScreen(props) {
         </div>
       </Section>
 
-      {/* Reconstitution — chosen in the shop, shown here as a line */}
-      {recon && (
-        <Section title="Reconstitution">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 13.5, color: C.text }}>{reconVialsChosen} {reconVialsChosen === 1 ? "vial" : "vials"} to reconstitute</span>
-            <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 14, color: C.teal }}>{reconVialsChosen} × ${reconPerVial} = {money(reconFee)}</span>
-          </div>
-          <div style={{ color: C.textDim, fontSize: 12, marginTop: 6, lineHeight: 1.4 }}>Set it in the shop above. Mixed vials must stay refrigerated, so reconstituted orders are pickup or delivery only, never shipped.</div>
-        </Section>
-      )}
-
       {/* Notes */}
       <Section title="Notes (optional)">
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything we should know…" rows={3}
@@ -1283,9 +1292,9 @@ function CheckoutScreen(props) {
       {/* Totals */}
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
         <Row k="Subtotal" v={money(subtotal)} />
+        {reconFee > 0 && <Row k={`Reconstitution (${reconVialsChosen} ${reconVialsChosen === 1 ? "vial" : "vials"})`} v={money(reconFee)} />}
         {disc && <Row k={disc.label} v={`−${money(discAmt)}`} accent={C.green} />}
         {deliveryFee > 0 && <Row k={fulfil === "shipping" ? "Shipping" : "Delivery"} v={money(deliveryFee)} />}
-        {reconFee > 0 && <Row k="Reconstitution" v={money(reconFee)} />}
         {cashAmt > 0 && <Row k={`Cash discount (${CASH_PCT}%)`} v={`−${money(cashAmt)}`} accent={C.green} />}
         <div style={{ height: 1, background: C.lineSoft, margin: "10px 0" }} />
         <Row k="Total" v={money(total)} big />
