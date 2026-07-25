@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.1.3-cash-scroll";
+const SHOP_VERSION = "2.2.0-recon-pervial";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -181,6 +181,7 @@ const SHIP_FEE = 20;                    // flat, dry product only (unmixed)
    them with the live values. Highest matching tier wins. */
 let DELIVERY_FEE = 40;                  // fallback; tj_pricing_v1.delivery_fee
 let RECON_FEE = 5;                      // fallback; tj_pricing_v1.recon_fee
+let RECON_PER_VIAL = 3;                 // $/vial reconstitution; tj_pricing_v1.recon_per_vial
 let CASH_PCT = 5;                       // % off final total when paying cash · tj_pricing_v1.cash_pct
 let DISCOUNT_TIERS = [
   { min: 400, pct: 15, label: "15% off — order over $400" },
@@ -204,6 +205,7 @@ function applyPricing(pricing) {
   }
   if (Number.isFinite(Number(pricing.delivery_fee))) DELIVERY_FEE = Number(pricing.delivery_fee);
   if (Number.isFinite(Number(pricing.recon_fee)))    RECON_FEE = Number(pricing.recon_fee);
+  if (Number.isFinite(Number(pricing.recon_per_vial))) RECON_PER_VIAL = Number(pricing.recon_per_vial);
   if (Number.isFinite(Number(pricing.cash_pct)))     CASH_PCT = Number(pricing.cash_pct);
   PRICING_SOURCE = "tj_pricing_v1";
   return true;
@@ -578,7 +580,8 @@ function App() {
   const disc = discountFor(subtotal);
   const discAmt = disc ? +(subtotal * disc.pct / 100).toFixed(2) : 0;
   const deliveryFee = fulfil === "shipping" ? SHIP_FEE : fulfil === "delivery" ? DELIVERY_FEE : 0;
-  const reconFee = recon ? RECON_FEE : 0;
+  const vialCount = items.reduce((n, it) => n + (Number(it.qty) || 0) * (it.form === "vial" ? 1 : (it.isKit && Array.isArray(it.components) ? it.components.length : 0)), 0);
+  const reconFee = recon ? vialCount * RECON_PER_VIAL : 0;
   const cashAmt = payment === "cash" ? +((subtotal * CASH_PCT) / 100).toFixed(2) : 0;
   const rawTotal = +(subtotal - discAmt - cashAmt + deliveryFee + reconFee).toFixed(2);
   const total = payment === "cash" ? Math.floor(rawTotal) : rawTotal;
@@ -616,7 +619,7 @@ function App() {
       notes: [
         notes.trim(),
         fulfil === "shipping" ? `Shipping (+${money(SHIP_FEE)})` : fulfil === "delivery" ? `Delivery (+${money(DELIVERY_FEE)})` : `Pickup ${pickDate || "TBD"} · ${pickupType === "consult" ? "consult (booking via Calendly)" : "contactless"}`,
-        recon ? `Reconstitution (+${money(RECON_FEE)})` : "",
+        recon ? `Reconstitution ${vialCount}×$${RECON_PER_VIAL} (+${money(reconFee)})` : "",
       ].filter(Boolean).join(" · "),
       items: items.map((it) => ({ id: it.id, name: it.name, unit: it.unit, qty: it.qty, price: it.price })),
       sub: subtotal, disc: discAmt, cashDisc: cashAmt, total,
@@ -708,7 +711,7 @@ function App() {
         {catalogFailed && <CatalogUnavailable />}
         {!catalogFailed && products === null && <CatalogSkeleton />}
         {products !== null && stage === "shop" && (
-          <ShopScreen products={products} cart={cart} setQty={setQty} q={q} setQ={setQ} me={me} onForget={forgetMe} stock={stock} />
+          <ShopScreen products={products} cart={cart} setQty={setQty} q={q} setQ={setQ} me={me} onForget={forgetMe} stock={stock} recon={recon} setRecon={setRecon} vialCount={vialCount} reconPerVial={RECON_PER_VIAL} />
         )}
         {products !== null && stage === "checkout" && (
           <CheckoutScreen products={products}
@@ -718,7 +721,7 @@ function App() {
             fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
             pickDate={pickDate} setPickDate={setPickDate} pickupType={pickupType} setPickupType={setPickupType}
             payment={payment} setPayment={setPayment} notes={notes} setNotes={setNotes}
-            recon={recon} setRecon={setRecon} reconFee={reconFee}
+            recon={recon} setRecon={setRecon} reconFee={reconFee} vialCount={vialCount} reconPerVial={RECON_PER_VIAL}
             contactOk={contactOk} addressOk={addressOk} canPlace={canPlace} submitting={submitting}
             me={me} onForget={forgetMe}
             placeOrder={placeOrder} backToShop={() => setStage("shop")}
@@ -791,7 +794,7 @@ function CatalogUnavailable() {
   );
 }
 
-function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock }) {
+function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock, recon, setRecon, vialCount, reconPerVial }) {
   const [catFilter, setCatFilter] = useState("all");
   const shopSubtotal = products.reduce((a, p) => a + (cart[p.id] || 0) * (p.price || 0), 0);
   const filtered = products.filter((p) => !q || (p.name + " " + p.desc).toLowerCase().includes(q.toLowerCase()));
@@ -810,6 +813,16 @@ function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock }) {
         <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">💵</span>
         <div style={{ fontSize: 14, fontWeight: 700, color: "#eafaf3" }}>Instant 5% off when you pay cash <span style={{ fontWeight: 500, color: "rgba(234,250,243,.82)" }}>— just choose “Cash” at checkout.</span></div>
       </div>
+      {vialCount > 0 && (
+        <div onClick={() => setRecon(!recon)} role="button" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 12, background: recon ? "rgba(20,119,106,.14)" : C.surface, border: `1px solid ${recon ? C.teal : C.line}`, borderRadius: 14, padding: "12px 15px", marginBottom: 14 }}>
+          <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">🧪</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Want it mixed for you? Add reconstitution — <span style={{ color: C.teal }}>${reconPerVial}/vial</span></div>
+            <div style={{ fontSize: 12.5, color: C.textDim, lineHeight: 1.4 }}>We reconstitute every vial so it's ready to use — no BAC water or mixing needed. Final amount ({vialCount} {vialCount === 1 ? "vial" : "vials"}) is added at checkout.</div>
+          </div>
+          <div style={{ flexShrink: 0, fontFamily: MONO, fontWeight: 700, fontSize: 13, color: recon ? C.green : C.textDim, border: `1px solid ${recon ? C.teal : C.line}`, borderRadius: 999, padding: "6px 13px" }}>{recon ? "✓ Added" : "Add"}</div>
+        </div>
+      )}
       <SaveBar subtotal={shopSubtotal} />
       <div style={{ display: "flex", gap: 9, alignItems: "flex-start", background: C.surface, border: `1px solid ${C.tealDim}`, borderRadius: 12, padding: "11px 13px", marginBottom: 16, fontSize: 12.5, lineHeight: 1.5, color: C.text }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" /></svg>
@@ -1083,7 +1096,7 @@ function CheckoutScreen(props) {
   const { items, subtotal, disc, discAmt, cashAmt, deliveryFee, total, setQty,
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
-    recon, setRecon, reconFee,
+    recon, setRecon, reconFee, vialCount, reconPerVial,
     contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
 
   if (items.length === 0) {
@@ -1245,10 +1258,11 @@ function CheckoutScreen(props) {
       {/* Reconstitution */}
       <Section title="Reconstitution">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <Choice active={recon === true} onClick={() => { setRecon(true); if (fulfil === "shipping") setFulfil("pickup"); }} title={`Yes · +${money(RECON_FEE)}`} sub="We mix it, ready to use" />
+          <Choice active={recon === true} onClick={() => { setRecon(true); if (fulfil === "shipping") setFulfil("pickup"); }} title={`Yes · $${reconPerVial}/vial`} sub="We mix it, ready to use" />
           <Choice active={recon === false} onClick={() => setRecon(false)} title="No" sub="You mix it yourself" />
         </div>
-        {recon && <div style={{ color: C.textDim, fontSize: 12, marginTop: 8, lineHeight: 1.4 }}>Mixed vials must stay refrigerated, so reconstituted orders are pickup or delivery only, never shipped.</div>}
+        {recon && <div style={{ color: C.teal, fontSize: 13, marginTop: 8, fontWeight: 700 }}>{vialCount} {vialCount === 1 ? "vial" : "vials"} × ${reconPerVial} = {money(reconFee)}</div>}
+        {recon && <div style={{ color: C.textDim, fontSize: 12, marginTop: 6, lineHeight: 1.4 }}>Mixed vials must stay refrigerated, so reconstituted orders are pickup or delivery only, never shipped.</div>}
       </Section>
 
       {/* Notes */}
