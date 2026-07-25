@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.4.1-round-note";
+const SHOP_VERSION = "2.4.2-vialcount-fix";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -579,7 +579,10 @@ function App() {
   const subtotal = useMemo(() => items.reduce((s, it) => s + it.price * it.qty, 0), [items]);
   const disc = discountFor(subtotal);
   const deliveryFee = fulfil === "shipping" ? SHIP_FEE : fulfil === "delivery" ? DELIVERY_FEE : 0;
-  const vialCount = items.reduce((n, it) => n + (Number(it.qty) || 0) * (it.form === "vial" ? 1 : (it.isKit && Array.isArray(it.components) ? it.components.length : 0)), 0);
+  const vialsPerItem = (it) => (it.isKit && Array.isArray(it.components)) ? it.components.length
+    : ((it.category !== "Supplies") && /vial/i.test(it.unit || "")) ? 1
+    : 0;  // shop items have `unit`/`category`, not `form` — count peptide vials + stack vials, exclude supplies/nasal
+  const vialCount = items.reduce((n, it) => n + (Number(it.qty) || 0) * vialsPerItem(it), 0);
   const reconVialsChosen = vialCount > 0 ? Math.max(0, Math.min(reconQty, vialCount)) : 0;
   const reconFee = reconVialsChosen * RECON_PER_VIAL;
   const recon = reconVialsChosen > 0;
