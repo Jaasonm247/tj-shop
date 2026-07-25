@@ -1,0 +1,1687 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="preconnect" href="https://dvopnfrzpyuqdafweviv.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://dvopnfrzpyuqdafweviv.supabase.co" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>T&J Wellness Circle — Shop</title>
+    <meta name="description" content="Browse our peptide catalog and order with member pricing. Pickup, delivery, and shipping across BC." />
+    <meta property="og:title" content="T&amp;J Wellness Circle — Shop" />
+    <meta property="og:description" content="Browse our peptide catalog and order with member pricing. Pickup, delivery, and shipping." />
+    <meta property="og:site_name" content="T&amp;J Wellness Circle" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://shop.tjwellnesscircle.ca/" />
+    <meta property="og:image" content="https://shop.tjwellnesscircle.ca/share.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="T&amp;J Wellness Circle — Shop" />
+    <meta name="twitter:description" content="Browse our peptide catalog and order with member pricing. Pickup, delivery, and shipping." />
+    <meta name="twitter:image" content="https://shop.tjwellnesscircle.ca/share.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="https://shop.tjwellnesscircle.ca/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="https://shop.tjwellnesscircle.ca/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="https://shop.tjwellnesscircle.ca/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="https://shop.tjwellnesscircle.ca/icon-512.png" />
+    <meta name="apple-mobile-web-app-title" content="T&amp;J Shop" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;0,900;1,500;1,600&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      html, body { margin: 0; padding: 0; background: #0b1a10; }
+      #root { min-height: 100vh; }
+      #boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: radial-gradient(1000px 500px at 50% -140px, #10301e 0%, #0b1a10 62%); color: #86a695; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: .16em; }
+      #boot svg { animation: spin 1.4s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <!-- Runtime dependencies from CDN. No build step. -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot">
+        <svg width="34" height="34" viewBox="0 0 40 40" fill="none">
+          <circle cx="20" cy="20" r="14" stroke="#3cba7d" stroke-width="1.4" opacity="0.5"></circle>
+          <circle cx="20" cy="6" r="2.6" fill="#3cba7d"></circle>
+          <circle cx="6" cy="20" r="2.6" fill="#3cba7d"></circle>
+        </svg>
+        <div>LOADING SHOP…</div>
+      </div>
+    </div>
+
+    <!-- Shop source. type="text/plain" so the browser does NOT run it directly;
+         the loader below compiles this JSX in-browser and mounts it. One file, no fetch. -->
+    <script type="text/plain" id="shop-src">
+const { useState, useEffect, useMemo, useRef } = React;
+const { createClient } = (window.supabase || {});
+
+/* ============================================================================
+   T&J Wellness Circle — Shop
+   Single-file React component. No build step: index.html loads React + Supabase
+   + Babel from CDN, fetches this file, and renders <App/> (window.TJShop) at #root.
+   Order contract (tj_pending_v1) is preserved so the Tracker's Shop Orders tab
+   keeps working. Client de-duplication happens on the Tracker side (it matches
+   incoming orders by email OR phone before creating a client).
+============================================================================ */
+
+/* ---- Version -------------------------------------------------------------
+   Bump this on every change so builds are traceable. Convention:
+   major.minor.patch — patch = small fix, minor = new feature, major = big rework.
+   The version is shown at the bottom of the shop AND stamped onto every order. */
+const SHOP_VERSION = "2.1.0-cash";
+const SHOP_BUILD = "2026-07-13";
+
+/* ---- Supabase (same project/key as the tracker) --------------------------- */
+const SUPABASE_URL = "https://dvopnfrzpyuqdafweviv.supabase.co";
+const SUPABASE_KEY = "sb_publishable_eEvRLh1T4q_20ocEJrcMwA_R4V81Vrp";
+let _sb = null;
+const sb = () => (_sb ||= createClient(SUPABASE_URL, SUPABASE_KEY));
+const PENDING_KEY = "tj_pending_v1";
+
+const store = {
+  async get(name) {
+    const { data, error } = await sb().from("store").select("value").eq("name", name).maybeSingle();
+    if (error) throw error;
+    return data?.value ?? null;
+  },
+  async set(name, value) {
+    const { error } = await sb().from("store").upsert({ name, value }, { onConflict: "name" });
+    if (error) throw error;
+  },
+};
+
+/* ---- Live stock: on-hand, reserved, inbound (matches the tracker's math) --- */
+// Inventory/orders are keyed by product NAME; the shop knows product id -> name via the live-merged catalog.
+// vials physically on the shelf for a product name
+function stockOnHand(inv, name, sku) {
+  return (inv || []).filter((b) => (sku && b.sku_code) ? b.sku_code === sku : b.sku === name)
+    .reduce((a, b) => a + (b.vials_left || 0), 0);
+}
+// units spoken for by open (not completed) orders, incl. paid pre-buys — they hold stock
+function stockReserved(orders, name, sku) {
+  let r = 0;
+  (orders || []).forEach((o) => {
+    if (o.closed) return;
+    (o.lines || []).forEach((l) => {
+      if ((sku && l.sku_code) ? l.sku_code === sku : l.sku === name) {
+        const picked = l.pickedQty != null ? (parseInt(l.pickedQty, 10) || 0) : (l.picked ? (parseInt(l.qty, 10) || 0) : 0);
+        r += Math.max(0, (parseInt(l.qty, 10) || 0) - picked);
+      }
+    });
+  });
+  return r;
+}
+// vials on the way: kits on POs not yet received, x vials/kit, mapped supplier->sellable name
+const SUPPLIER_TO_SELLABLE_SHOP = {
+  "KLOW 80mg": "KLOW 80mg Blend", "Melanotan II 10mg": "Melanotan II (MT2)", "MOTS-c 40mg": "MOTS-c",
+  "Tesamorelin 10mg": "Tesamorelin", "Selank 10mg": "Selank", "Semax 10mg": "Semax", "HCG 10000iu": "HCG",
+  "PT-141 10mg": "PT-141", "GHK-Cu 100mg": "GHK-Cu", "Glutathione 1500mg": "Glutathione",
+  "BPC+TB Blend 20mg": "Wolverine Stack (BPC+TB)", "CJC-1295 NoDAC+Ipa 20mg": "CJC-1295 + Ipamorelin",
+  "Kisspeptin-10 10mg": "Kisspeptin-10",
+};
+function stockInbound(pos, name) {
+  let v = 0;
+  (pos || []).forEach((po) => {
+    if (po.received || po.status === "Closed") return; // only not-yet-received POs are inbound
+    const vialsPerKit = (po.cfg && po.cfg.vials) || 10;
+    (po.lines || []).forEach((l) => {
+      const sellable = SUPPLIER_TO_SELLABLE_SHOP[l.name] || l.name;
+      if (sellable === name) v += (parseInt(l.qtyKits, 10) || 0) * vialsPerKit;
+    });
+  });
+  return v;
+}
+// Build a per-product-id stock map: { p01: { onHand, reserved, available, inbound } }
+// Nasal sprays are made from the in-stock parent vial, so their availability mirrors the parent.
+// Made-to-order items draw stock from their source vial — keyed by SKU so renames can't break it.
+const STOCK_ALIAS_SKU = { "TJ-SELANK-NASAL": "TJ-SELANK-10", "TJ-SEMAX-NASAL": "TJ-SEMAX-10" };
+const STOCK_ALIAS = { "Selank Nasal Spray": "Selank 10mg", "Semax Nasal Spray": "Semax 10mg" }; // legacy fallback
+function buildStockMap(inv, orders, pos, products) {
+  const m = {};
+  (products || []).forEach((p) => {
+    if (p.isKit || p.components) return; // stacks derived in a second pass
+    const sku = STOCK_ALIAS_SKU[p.sku_code] || p.sku_code;
+    const name = STOCK_ALIAS[p.name] || p.name;
+    const onHand = stockOnHand(inv, name, sku);
+    const reserved = stockReserved(orders, name, sku);
+    m[p.id] = { onHand, reserved, available: onHand - reserved, inbound: stockInbound(pos, name) };
+  });
+  // Stacks: available = min(component availabilities); unknown components don't block.
+  (products || []).forEach((p) => {
+    if (!(p.isKit || p.components)) return;
+    let min = Infinity, anyKnown = false, unresolved = false;
+    stackRefs(p).forEach((ref) => {
+      const comp = resolveRef(products, ref);
+      if (!comp) { unresolved = true; return; }   // a component we cannot identify must not be ignored
+      const st = m[comp.id];
+      if (st && typeof st.available === "number") { anyKnown = true; min = Math.min(min, st.available); }
+    });
+    // If any component is unresolved, availability is UNKNOWN, not "whatever the others said".
+    m[p.id] = { onHand: 0, reserved: 0, available: (unresolved || !anyKnown) ? null : (min === Infinity ? null : min), inbound: 0 };
+  });
+  return m;
+}
+
+/* ---- Business constants --------------------------------------------------- */
+const ETRANSFER_EMAIL = "tjwellnesscircle@gmail.com";
+const PHONE = "604-516-9377";
+const CALENDLY_PICKUP_URL = "https://calendly.com/tjwellnesscircle/t-j-product-pick-up?back=1";
+const CALENDLY_CONSULT_URL = "https://calendly.com/tjwellnesscircle/30min?back=1"; // free consult (not a pickup)
+const WEB3FORMS_KEY = "77e0dd05-adbc-48dc-b2c4-8f57a5f9acb8";
+const SHIP_FEE = 20;                    // flat, dry product only (unmixed)
+                                        // NOTE: no tj_pricing_v1 equivalent exists yet — still Shop-local.
+
+/* ---- Pricing comes from the database (store -> tj_pricing_v1) ---------------
+   These are FALLBACK DEFAULTS ONLY, used until the live ladder loads (and if it
+   ever fails to). The Shop used to hold its own private copy of this ladder; it
+   agreed with the database by luck, not by design. applyPricing() below replaces
+   them with the live values. Highest matching tier wins. */
+let DELIVERY_FEE = 40;                  // fallback; tj_pricing_v1.delivery_fee
+let RECON_FEE = 5;                      // fallback; tj_pricing_v1.recon_fee
+let CASH_PCT = 5;                       // % off final total when paying cash · tj_pricing_v1.cash_pct
+let DISCOUNT_TIERS = [
+  { min: 400, pct: 15, label: "15% off — order over $400" },
+  { min: 300, pct: 10, label: "10% off — order over $300" },
+  { min: 200, pct: 5,  label: "5% off — order over $200" },
+];
+let PRICING_SOURCE = "fallback";        // "tj_pricing_v1" once the live ladder is in
+
+function applyPricing(pricing) {
+  if (!pricing || typeof pricing !== "object") return false;
+  const tiers = Array.isArray(pricing.volume_tiers) ? pricing.volume_tiers : null;
+  if (tiers && tiers.length) {
+    // Sort defensively: discountFor takes the FIRST match, so highest min must come first.
+    const clean = tiers
+      .filter((t) => t && Number.isFinite(Number(t.min)) && Number.isFinite(Number(t.pct)))
+      .map((t) => ({ min: Number(t.min), pct: Number(t.pct), label: t.label || `${t.pct}% off — order over $${t.min}` }))
+      .sort((a, b) => b.min - a.min);
+    // Only adopt a ladder that SURVIVED validation. If every row was malformed, clean is []
+    // and assigning it would silently remove every volume discount from the storefront.
+    if (clean.length) DISCOUNT_TIERS = clean;
+  }
+  if (Number.isFinite(Number(pricing.delivery_fee))) DELIVERY_FEE = Number(pricing.delivery_fee);
+  if (Number.isFinite(Number(pricing.recon_fee)))    RECON_FEE = Number(pricing.recon_fee);
+  if (Number.isFinite(Number(pricing.cash_pct)))     CASH_PCT = Number(pricing.cash_pct);
+  PRICING_SOURCE = "tj_pricing_v1";
+  return true;
+}
+const discountFor = (sub) => DISCOUNT_TIERS.find((t) => sub >= t.min) || null;
+
+/* ---- On-device memory (keeps repeat buyers from re-typing) ---------------- */
+const ME_KEY = "tj_shop_me_v1";
+const HIST_KEY = "tj_shop_history_v1";
+const loadMe = () => { try { return JSON.parse(localStorage.getItem(ME_KEY)) || null; } catch { return null; } };
+const saveMe = (m) => { try { localStorage.setItem(ME_KEY, JSON.stringify(m)); } catch {} };
+const loadHist = () => { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch { return []; } };
+const saveHist = (h) => { try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 20))); } catch {} };
+
+/* ---- Catalog (prices in CAD) ---------------------------------------------- */
+/* ---- CATALOG ------------------------------------------------------------
+   There is deliberately no hardcoded product list here. There used to be, and
+   it was a liability: it rendered 20 prices instantly and the database then
+   corrected them. On a slow phone — or any failed request — the customer read
+   the typed copy and never saw the correction. It carried a fossil:
+   "CJC-1295 + Ipamorelin · 20mg vial · $85" — a product that had since been
+   split into a 10mg at $68 and a 20mg at $125. $85 existed in no row of the
+   database. And 13 of its 24 names carried no strength at all ("Tesamorelin"),
+   so TJ-TESA-10 and TJ-TESA-20 were indistinguishable to a customer.
+   The catalog now comes from the database, or it does not come at all.
+   ------------------------------------------------------------------------ */
+// Merge live catalog (tj_prd_v1) over the hardcoded base: override price/name/unit by id,
+// append newly-promoted products, and skip name-duplicates (e.g. supplies) to avoid doubles.
+// Show the vial size as part of the bold product name, consistently, and keep the grey line to the form only.
+function sizeFromUnit(unit) { const m = (unit || "").match(/^([\d,]+\s*(?:mg|mcg|iu|ml))/i); return m ? m[1].replace(/\s+/g, "") : ""; }
+function displayName(p) {
+  const sz = sizeFromUnit(p.unit);
+  if (!sz) return p.name;
+  const flat = p.name.replace(/\s+/g, "").toLowerCase();
+  return flat.includes(sz.toLowerCase()) ? p.name : p.name + " " + sz;
+}
+function unitForm(unit) { return (unit || "").replace(/^[\d,]+\s*(?:mg|mcg|iu|ml)\s*/i, "").trim() || (unit || ""); }
+
+// Group rule: cluster every product with its other sizes (Retatrutide 10/20/30/40 together, etc.)
+function baseName(n) { return (n || "").replace(/\s*[\d,]+\s*(?:mg|mcg|iu|ml)\b.*/i, "").replace(/\s*Nasal Spray$/i, "").trim() || n; }
+function sizeKey(n) { const m = (n || "").match(/([\d,]+)\s*(?:mg|mcg|iu|ml)/i); return [/Nasal Spray/i.test(n) ? 1 : 0, m ? parseInt(m[1].replace(/,/g, ""), 10) : 0]; }
+function byNameThenSize(a, b) {
+  const an = baseName(a.name), bn = baseName(b.name);
+  if (an !== bn) return an.localeCompare(bn);
+  const [ax, ay] = sizeKey(a.name), [bx, by] = sizeKey(b.name);
+  return ax - bx || ay - by;
+}
+
+/* ---- One card per compound: display name, size label, molecule blurb -------
+   THE core content rule: talk about the molecule, not the vial size. A compound
+   with several sizes is ONE card; sizes appear only where price is shown. */
+function compoundName(p) {
+  let b = baseName(p.name);
+  b = b.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return b;
+}
+function sizeLabel(p) {
+  if (/nasal spray/i.test(p.name)) return "Nasal spray";
+  const m = ((p.name || "") + " " + (p.unit || "")).match(/([\d,]+)\s*(mg|mcg|iu|ml)/i);
+  return m ? (m[1].replace(/\s+/g, "") + m[2].toLowerCase()) : (unitForm(p.unit) || "");
+}
+const COMPOUND_DESC = {
+  "Retatrutide": "GLP-1 / GIP / glucagon tri-agonist for appetite and metabolic control.",
+  "Tesamorelin": "GHRH analog targeting visceral fat, with GH support.",
+  "MOTS-c": "Mitochondrial peptide that activates AMPK for metabolism.",
+  "BPC-157": "Cytoprotective peptide for gut, tendon and soft-tissue repair.",
+  "KLOW": "BPC-157 · TB-500 · KPV · GHK-Cu — all-in-one healing blend.",
+  "Wolverine Stack": "BPC-157 + TB-500 recovery stack for injury repair.",
+  "Thymosin Alpha-1": "Immune-modulating peptide for resilience.",
+  "CJC-1295 + Ipamorelin": "GH secretagogue combo (no DAC) for a nightly GH pulse.",
+  "NAD+": "Cellular energy and DNA-repair coenzyme.",
+  "SS-31": "Elamipretide — mitochondrial-membrane protectant.",
+  "Epitalon": "Pineal peptide studied for telomere and longevity support.",
+  "Glutathione": "The body's master antioxidant.",
+  "Selank": "Anxiolytic nootropic — calm, focused clarity.",
+  "Semax": "Nootropic peptide for focus and neuroprotection.",
+  "DSIP": "Delta sleep-inducing peptide for deeper rest.",
+  "GHK-Cu": "Copper peptide for skin, collagen and healing.",
+  "Melanotan II": "α-MSH analog for tanning and libido.",
+  "Snap-8": "Acetyl octapeptide that softens expression lines.",
+  "PT-141": "Bremelanotide — libido and sexual-function peptide.",
+  "Kisspeptin-10": "Upstream hormone signal for the reproductive axis.",
+  "HCG": "LH analog supporting natural testosterone production.",
+};
+function compoundDesc(base, fallback) { return COMPOUND_DESC[base] || fallback || ""; }
+
+/* ---- Deep links into the Resource Hub (trust + learn at the point of sale) -
+   COA badge → the Hub's Test Results panel; Learn → the compound reference.
+   The Hub honours these #hashes (added in the Hub redesign). */
+const coaLink = () => HUB_URL + "/#coa";
+const CAT_TO_GUIDE = {
+  "Weight Loss & Metabolic": "dose", "Healing, Recovery & Immune": "quickref",
+  "Anti-Aging & Longevity": "quickref", "Cognitive & Sleep": "quickref",
+  "Skin & Cosmetic": "quickref", "Sexual & Hormonal Health": "quickref",
+};
+function learnLink(p) {
+  const base = compoundName(p).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const guide = CAT_TO_GUIDE[categoryOf(p)] || "quickref";
+  return HUB_URL + "/#" + guide + (base ? "/" + base : "");
+}
+
+/* ---- Stacks: rendered from the LIVE catalog (isKit + components) -----------
+   The DB carries the 4 bundle stacks with an isKit flag and a components list.
+   A stack is in stock only when every component is in stock (see buildStockMap,
+   COO sheet Part 1) — derived automatically, never a manual stock entry. */
+
+// Hub category taxonomy — same six buckets and order used across the Hub, plus Stacks/More/Supplies.
+const SHOP_CATS = ["Weight Loss & Metabolic", "Healing, Recovery & Immune", "Anti-Aging & Longevity", "Cognitive & Sleep", "Skin & Cosmetic", "Sexual & Hormonal Health", "Stacks & Bundles", "More", "Supplies"];
+const CAT_SHORT = { "Weight Loss & Metabolic": "Weight Loss", "Healing, Recovery & Immune": "Healing", "Anti-Aging & Longevity": "Longevity", "Cognitive & Sleep": "Cognitive", "Skin & Cosmetic": "Skin", "Sexual & Hormonal Health": "Sexual/Hormonal", "Stacks & Bundles": "Stacks", "More": "More", "Supplies": "Supplies" };
+const catLabel = (c) => CAT_SHORT[c] || c;
+function categoryOf(p) {
+  if (p.isKit || p.components) return "Stacks & Bundles";
+  if (p.category) {
+    const c = p.category === "Stacks" ? "Stacks & Bundles" : p.category;
+    if (SHOP_CATS.includes(c)) return c;
+  }
+  const n = (p.name || "").toLowerCase(), u = (p.unit || "").toLowerCase();
+  if (p.cat === "supply" || /bac water|needle|syringe/.test(n)) return "Supplies";
+  if (/stack/.test(u)) return "Stacks & Bundles"; // 2-vial bundles carry a "…stack" unit; Wolverine's unit is "20mg vial"
+  const b = baseName(p.name).toLowerCase();
+  const has = (...xs) => xs.some((x) => b.startsWith(x));
+  if (has("retatrutide", "tesamorelin", "mots", "semaglutide", "tirzepatide", "mazdutide", "cagrilintide", "survodutide")) return "Weight Loss & Metabolic";
+  if (has("klow", "bpc-157", "wolverine", "thymosin", "tb-500", "ll-37", "kpv", "thymalin", "ara-290", "bpc+tb")) return "Healing, Recovery & Immune";
+  if (has("cjc-1295", "epitalon", "nad", "ss-31", "glutathione", "sermorelin", "ipamorelin", "ghrp", "hexarelin", "igf-1", "5-amino")) return "Anti-Aging & Longevity";
+  if (has("selank", "semax", "dsip", "p21", "humanin")) return "Cognitive & Sleep";
+  if (has("ghk", "snap-8", "melanotan", "mt-2", "mt2", "aod")) return "Skin & Cosmetic";
+  if (has("pt-141", "kisspeptin", "hcg", "oxytocin", "triptorelin")) return "Sexual & Hormonal Health";
+  return "More";
+}
+
+function catalogFrom(prd) {
+  // NO FALLBACK. No data -> no catalog -> the UI shows a skeleton, then a retry.
+  // The old signature took a hardcoded `base` and opened with
+  // `if (!prd.length) return base;` — that line is precisely how the Shop came
+  // to advertise a $85 price that existed in no row of the database.
+  if (!Array.isArray(prd) || !prd.length) return null;
+  const isHidden = (x) => x.discontinued === true || x.internal === true || x.type === "internal";
+  const out = [];
+  prd.forEach((x) => {
+    if (isHidden(x)) return;
+    const isSupply = /BAC|NDL/i.test(x.sku_code || "") || /water|needle/i.test(x.name || "");
+    out.push({
+      id: x.id, sku_code: x.sku_code, name: x.name, unit: x.unit || "",
+      price: Number(x.sell), cat: isSupply ? "supply" : "peptide", category: x.category,
+      isKit: x.isKit === true, components: x.components || null,
+      component_skus: x.component_skus || null, desc: x.desc || "",
+      prebuy: x.prebuy === true || x.prebuy === "true",
+    });
+  });
+  return out.length ? out : null;
+}
+
+/* ---- Stack component resolution: sku_code first, name only as a legacy fallback.
+   components[] holds NAME STRINGS, which is a join the pipeline forbids: the string
+   "CJC-1295 + Ipamorelin 10mg" never matched the DB name
+   "CJC-1295 + Ipamorelin 10mg (5mg + 5mg)", so the component silently priced at 0,
+   the Full Recovery Stack advertised no saving, and its stock ignored CJC entirely. */
+function stackRefs(p) {
+  return (p.component_skus && p.component_skus.length) ? p.component_skus : (p.components || []);
+}
+function resolveRef(products, ref) {
+  const list = products || [];
+  return list.find((q) => q.sku_code === ref) || list.find((q) => q.name === ref) || null;
+}
+
+/* ---- Theme — forest-green brand, unified with the Resource Hub ------------- */
+const C = {
+  bg: "#0b1a10", bg2: "#0e2416", surface: "#12291b", surface2: "#183322",
+  line: "#244433", lineSoft: "#1a3325",
+  teal: "#3cba7d", tealDim: "#1e6b4a",
+  text: "#eef7f1", textDim: "#8aa898",
+  green: "#4ade80", amber: "#f5c96a", red: "#f08a7a",
+  paper: "#f7f4ee", ink: "#16241c",
+};
+const FONT = "'DM Sans', system-ui, sans-serif";
+const MONO = "'DM Mono', ui-monospace, monospace";
+const SERIF = "'Playfair Display', Georgia, serif";
+
+/* ---- Resource Hub address (for the "Learn" link on each product) -----------
+   Set this to your live Resource Hub URL. Learn links open the hub in a new tab. */
+const HUB_URL = "https://tjwellnesscircle.ca";
+
+/* ---- Category visual system: accent colour + soft tint + icon --------------
+   Shared with the Hub taxonomy. Turns a wall of text rows into a scannable,
+   colour-coded catalog. */
+const CATS = {
+  "Weight Loss & Metabolic":    { cc: "#e0a63a", cb: "rgba(224,166,58,.16)",  icon: "M12 3v3M12 18v3M4.2 7l2.1 2.1M17.7 14.9l2.1 2.1M3 12h3M18 12h3M4.2 17l2.1-2.1M17.7 9.1l2.1-2.1" },
+  "Healing, Recovery & Immune": { cc: "#3cba7d", cb: "rgba(60,186,125,.16)",  icon: "M12 21s-7-4.6-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.4-7 10-7 10z" },
+  "Anti-Aging & Longevity":     { cc: "#a78bfa", cb: "rgba(167,139,250,.16)", icon: "M12 4c4 4 4 12 0 16-4-4-4-12 0-16zM6 12h12" },
+  "Cognitive & Sleep":          { cc: "#6aa9e0", cb: "rgba(106,169,224,.16)", icon: "M9 3a4 4 0 0 0-4 4c-1.5 1-2 3 0 4.5C4 14 6 16 9 15v3a2 2 0 0 0 4 0V5a2 2 0 0 0-4-2z" },
+  "Skin & Cosmetic":            { cc: "#e58bb0", cb: "rgba(229,139,176,.16)", icon: "M12 3v2M12 19v2M3 12h2M19 12h2M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18" },
+  "Sexual & Hormonal Health":   { cc: "#e8766f", cb: "rgba(232,118,111,.16)", icon: "M12 9V3M9 5h6M12 9a5 5 0 1 0 0 10 5 5 0 0 0 0-10z" },
+  "Stacks & Bundles":           { cc: "#4fd0a0", cb: "rgba(79,208,160,.16)",  icon: "M12 3l8 4-8 4-8-4 8-4zM4 12l8 4 8-4M4 17l8 4 8-4" },
+  "More":                       { cc: "#8aa898", cb: "rgba(138,168,152,.16)", icon: "M5 12h.01M12 12h.01M19 12h.01" },
+  "Supplies":                   { cc: "#9fb8ab", cb: "rgba(159,184,171,.16)", icon: "M14 4l6 6-9 9-6 1 1-6z" },
+};
+const catMeta = (cat) => CATS[cat] || CATS["More"];
+function CatIcon({ cat, size = 22 }) {
+  const m = catMeta(cat);
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={m.cc} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={m.icon} /></svg>;
+}
+function VialArt({ color, supply }) {
+  if (supply) return (<svg viewBox="0 0 40 48" fill="none"><path d="M8 40l18-18M22 14l6 6M24 12l4 4M6 42l4-2 22-22-2-2z" stroke={color} strokeWidth="1.8" strokeLinejoin="round" /></svg>);
+  return (
+    <svg viewBox="0 0 40 48" fill="none">
+      <rect x="13" y="2" width="14" height="4" rx="1.4" fill={color} />
+      <path d="M15 6h10v3l2 4v27a3 3 0 0 1-3 3H16a3 3 0 0 1-3-3V13l2-4z" fill="rgba(255,255,255,.06)" stroke={color} strokeWidth="1.6" />
+      <rect x="15.5" y="26" width="9" height="14" rx="1.5" fill={color} opacity="0.45" />
+      <path d="M15 20h10" stroke={color} strokeWidth="1.2" opacity="0.5" />
+    </svg>
+  );
+}
+const money = (n) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(n || 0);
+const normEmail = (v) => (v || "").trim().toLowerCase();
+const normPhone = (v) => { const d = (v || "").replace(/[^0-9]/g, ""); return d.length === 11 && d.startsWith("1") ? d.slice(1) : d; };
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const upcomingDays = (n) => {
+  const out = []; const base = new Date();
+  for (let i = 0; i < n; i++) {
+    const x = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    const iso = `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+    const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : x.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    out.push({ iso, label });
+  }
+  return out;
+};
+
+/* ============================ tiny UI primitives =========================== */
+function Btn({ children, onClick, variant = "solid", size = "md", disabled, style }) {
+  const pads = { sm: "8px 12px", md: "12px 16px", lg: "15px 20px" };
+  const base = {
+    fontFamily: FONT, fontWeight: 700, fontSize: size === "lg" ? 16 : 14, cursor: disabled ? "not-allowed" : "pointer",
+    border: "none", borderRadius: 12, padding: pads[size], transition: "opacity .15s, transform .05s", opacity: disabled ? 0.5 : 1,
+  };
+  const vary = {
+    solid: { background: C.teal, color: "#04140d" },
+    ghost: { background: "transparent", color: C.text, border: `1px solid ${C.line}` },
+    quiet: { background: C.surface2, color: C.text },
+  }[variant];
+  return <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...vary, ...style }}
+    onMouseDown={(e) => !disabled && (e.currentTarget.style.transform = "scale(0.98)")}
+    onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+    onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}>{children}</button>;
+}
+function Input({ value, onChange, placeholder, type = "text", style }) {
+  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type}
+    style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10,
+      color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none", ...style }} />;
+}
+function Label({ children }) {
+  return <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: C.textDim, marginBottom: 7 }}>{children}</div>;
+}
+function Mark({ size = 26 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
+      <circle cx="20" cy="20" r="14" stroke={C.teal} strokeWidth="1.6" opacity="0.55" />
+      <circle cx="20" cy="6" r="2.8" fill={C.teal} />
+      <circle cx="6" cy="20" r="2.8" fill={C.teal} />
+      <circle cx="34" cy="20" r="2.8" fill={C.teal} />
+      <circle cx="20" cy="34" r="2.8" fill={C.teal} />
+    </svg>
+  );
+}
+/* ---- Branded hero + trust chips ------------------------------------------- */
+function TrustStrip() {
+  const chip = (stroke, path, label) => (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(45,212,191,.08)", border: `1px solid ${C.tealDim}`, borderRadius: 999, padding: "7px 12px", fontSize: 11.5 }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{path}</svg>{label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 15 }}>
+      {chip(C.green, <React.Fragment><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></React.Fragment>, "COAs on file")}
+      {chip(C.teal, <path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" />, "Price-match guarantee")}
+      {chip(C.amber, <React.Fragment><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.4" /></React.Fragment>, "Maple Ridge, BC")}
+    </div>
+  );
+}
+function Hero() {
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderRadius: 20, marginBottom: 16, background: "linear-gradient(155deg,#0c1c12 0%,#123a24 58%,#0b1810 100%)", border: `1px solid ${C.tealDim}`, padding: "26px 20px 22px" }}>
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 22% -10%, rgba(60,186,125,.26), transparent 58%)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", right: -40, bottom: -50, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(245,201,106,.10), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ position: "relative" }}>
+        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.24em", textTransform: "uppercase", color: "rgba(143,207,184,.7)", marginBottom: 10 }}>Maple Ridge · Lower Mainland BC</div>
+        <div style={{ fontFamily: SERIF, fontWeight: 800, fontSize: "clamp(28px,7vw,40px)", lineHeight: 1.08, letterSpacing: "-0.01em", color: C.text }}>
+          Research peptides,<br /><span style={{ fontStyle: "italic", color: C.teal }}>tested and local.</span>
+        </div>
+        <div style={{ color: "rgba(238,247,241,.78)", fontSize: 13.5, lineHeight: 1.6, marginTop: 10, maxWidth: 480 }}>
+          Every compound independently lab-verified. Pickup, BC delivery, and Canada-wide shipping — with automatic member discounts.
+        </div>
+        <TrustStrip />
+      </div>
+    </div>
+  );
+}
+/* ---- Live "distance to next discount" bar (shop + checkout) --------------- */
+function SaveBar({ subtotal, checkout }) {
+  const pct = Math.min(100, (subtotal / 400) * 100);
+  const next = [...DISCOUNT_TIERS].reverse().find((t) => subtotal < t.min);
+  return (
+    <div style={{ background: "linear-gradient(135deg, rgba(52,211,153,.10), rgba(45,212,191,.05))", border: `1px solid ${C.tealDim}`, borderRadius: 16, padding: "13px 15px", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 9 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, color: C.green }}>Spend more, save more{checkout ? "" : " · automatic"}</span>
+        <span style={{ fontFamily: MONO, fontSize: 11, color: C.textDim }}>
+          {subtotal <= 0 ? "Add items to start saving" : next ? `${money(next.min - subtotal)} to ${next.pct}% off` : "Top tier · 15% off"}
+        </span>
+      </div>
+      <div style={{ position: "relative", height: 8, background: C.bg, borderRadius: 999, overflow: "hidden" }}>
+        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: pct + "%", background: "linear-gradient(90deg,#14776a,#2dd4bf)", borderRadius: 999, transition: "width .4s ease" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
+        {[["$0", 0], ["$200 · 5%", 200], ["$300 · 10%", 300], ["$400 · 15%", 400]].map(([lbl, min]) => (
+          <span key={lbl} style={{ fontFamily: MONO, fontSize: 9.5, color: subtotal >= min && min > 0 ? C.green : C.textDim }}>{lbl}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ================================== APP ==================================== */
+function App() {
+  const [stage, setStage] = useState("shop");       // shop | checkout | done
+  const [cart, setCart] = useState({});             // { productId: qty }
+  const [q, setQ] = useState("");
+
+  const [me, setMe] = useState(() => loadMe());
+  const [name, setName] = useState(me?.name || "");
+  const [email, setEmail] = useState(me?.email || "");
+  const [phone, setPhone] = useState(me?.phone || "");
+  const [fulfil, setFulfil] = useState("pickup");   // pickup | shipping | delivery
+  const [pickDate, setPickDate] = useState("");        // required for pickup
+  const [pickupType, setPickupType] = useState(""); // "" (unchosen) | contactless | consult
+  const [address, setAddress] = useState(me?.address || "");
+  const [payment, setPayment] = useState("etransfer"); // etransfer | cash
+  const [recon, setRecon] = useState(false);           // reconstitution service
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [placed, setPlaced] = useState(null);       // finalized order for confirmation
+  const [stock, setStock] = useState(null);         // { p01: {onHand, reserved, available, inbound} } | null while loading
+  const [products, setProducts] = useState(null);   // null = not loaded yet. NEVER a typed list.
+  const [catalogFailed, setCatalogFailed] = useState(false);
+
+  // Load live inventory, open orders, and inbound POs, then build the per-product stock map.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [inv, orders, pos, prd, pricing] = await Promise.all([
+          store.get("tj_inv_v3"), store.get("tj_ord_v3"), store.get("tj_po_v1"), store.get("tj_prd_v1"),
+          store.get("tj_pricing_v1"),
+        ]);
+        if (!alive) return;
+        applyPricing(pricing); // live ladder + fees before anything is priced
+        const merged = catalogFrom(prd);
+        if (!merged) { setCatalogFailed(true); return; }  // silence, not a stale figure
+        setProducts(merged);
+        setStock(buildStockMap(inv || [], orders || [], pos || [], merged));
+      } catch (e) {
+        // A wrong number is worse than no number. Fail closed, never to a price.
+        if (alive) setCatalogFailed(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const pmap = useMemo(() => Object.fromEntries((products || []).map((p) => [p.id, p])), [products]);
+  const items = useMemo(() => Object.entries(cart).filter(([, n]) => n > 0)
+    .map(([id, qty]) => ({ ...pmap[id], qty })), [cart, pmap]);
+  const subtotal = useMemo(() => items.reduce((s, it) => s + it.price * it.qty, 0), [items]);
+  const disc = discountFor(subtotal);
+  const discAmt = disc ? +(subtotal * disc.pct / 100).toFixed(2) : 0;
+  const deliveryFee = fulfil === "shipping" ? SHIP_FEE : fulfil === "delivery" ? DELIVERY_FEE : 0;
+  const reconFee = recon ? RECON_FEE : 0;
+  const preCash = +(subtotal - discAmt + deliveryFee + reconFee).toFixed(2);
+  const cashAmt = payment === "cash" ? +((preCash * CASH_PCT) / 100).toFixed(2) : 0;
+  const total = +(preCash - cashAmt).toFixed(2);
+  const cartCount = items.reduce((s, it) => s + it.qty, 0);
+
+  const setQty = (id, qty) => setCart((c) => ({ ...c, [id]: Math.max(0, qty) }));
+
+  const contactOk = name.trim() && (email.trim() || phone.trim());
+  const addressOk = fulfil === "pickup" || address.trim();
+  const pickupOk = fulfil !== "pickup" || (pickDate && pickupType);
+  const canPlace = items.length > 0 && contactOk && addressOk && pickupOk && !submitting;
+
+  async function placeOrder() {
+    if (!canPlace) return;
+    setSubmitting(true);
+    /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order numbers shared with the Tracker (never revert to Date.now) ===== */
+    // Next order number in the ONE shared sequence used by the Tracker. Read both the order
+    // book (tj_ord_v3) and the pending queue (tj_pending_v1) so Shop + Tracker never diverge.
+    let orderNum;
+    try {
+      const [ordArr, pendArr] = await Promise.all([store.get("tj_ord_v3"), store.get(PENDING_KEY)]);
+      const nums = [...(Array.isArray(ordArr) ? ordArr : []), ...(Array.isArray(pendArr) ? pendArr : [])]
+        .map((o) => parseInt(o && o.orderNum, 10)).filter(Number.isFinite);
+      orderNum = (nums.length ? Math.max(...nums) : 0) + 1;
+    } catch (e) {
+      orderNum = Number(String(Date.now()).slice(-6));
+    }
+    /* ===== END T&J BACKEND ===== */
+    const order = {
+      orderNum, date: todayISO(),
+      customer: { name: name.trim(), email: email.trim(), phone: phone.trim() },
+      fulfil, address: fulfil === "pickup" ? "" : address.trim(),
+      payment, pickDate: fulfil === "pickup" ? pickDate : "",
+      pickupType: fulfil === "pickup" ? pickupType : "",
+      notes: [
+        notes.trim(),
+        fulfil === "shipping" ? `Shipping (+${money(SHIP_FEE)})` : fulfil === "delivery" ? `Delivery (+${money(DELIVERY_FEE)})` : `Pickup ${pickDate || "TBD"} · ${pickupType === "consult" ? "consult (booking via Calendly)" : "contactless"}`,
+        recon ? `Reconstitution (+${money(RECON_FEE)})` : "",
+      ].filter(Boolean).join(" · "),
+      items: items.map((it) => ({ id: it.id, name: it.name, unit: it.unit, qty: it.qty, price: it.price })),
+      sub: subtotal, disc: discAmt, cashDisc: cashAmt, total,
+      discount: disc ? { pct: disc.pct, label: disc.label } : null,
+      cashDiscount: cashAmt > 0 ? { pct: CASH_PCT, amount: cashAmt } : null,
+      deliveryFee,
+      recon,
+      reconFee,
+      shopVersion: SHOP_VERSION,
+    };
+    try {
+      // 1) queue into the tracker's pending list
+      const cur = await store.get(PENDING_KEY);
+      const arr = Array.isArray(cur) ? cur : [];
+      await store.set(PENDING_KEY, [order, ...arr]);
+      // 2) email notification (best-effort)
+      const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
+      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
+      /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ===== */
+      fetch("https://app.tjwellnesscircle.ca/.netlify/functions/send-order-email", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: `New T&J Order #${orderNum}`, message: msg, orderNum, customerEmail: order.customer.email || "", customerName: order.customer.name || "" }),
+      }).catch(() => {});
+      /* ===== END T&J BACKEND ===== */
+    } catch (e) {
+      console.error("Order submit error", e);
+    }
+    // remember this buyer on this device + keep their history
+    saveMe({ name: name.trim(), email: email.trim(), phone: phone.trim(), address: address.trim() });
+    saveHist([{ orderNum, date: order.date, total, items: order.items }, ...loadHist()]);
+    setPlaced(order);
+    setSubmitting(false);
+    setStage("done");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function reset() {
+    setCart({}); setNotes(""); setPlaced(null); setStage("shop");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // Clear the customer saved on THIS device (used on your own device between orders,
+  // or by anyone on a shared device who isn't the saved person).
+  function forgetMe() {
+    try { localStorage.removeItem(ME_KEY); } catch {}
+    setMe(null);
+    setName(""); setEmail(""); setPhone(""); setAddress("");
+    setStage("shop");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: FONT }}>
+      <style>{`
+        html { -webkit-text-size-adjust: 100%; }
+        input::placeholder, textarea::placeholder { color: ${C.textDim}; opacity: .8; }
+        input:focus, textarea:focus { border-color: ${C.teal} !important; }
+        /* 16px keeps iOS Safari from auto-zooming when a field is focused */
+        input, textarea, select { font-size: 16px; }
+        button { touch-action: manipulation; }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        @keyframes tjpop { from { transform: scale(.96); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+      `}</style>
+
+      {/* Header */}
+      <header style={{ position: "sticky", top: 0, zIndex: 20, background: `${C.bg}f2`, backdropFilter: "blur(8px)", borderBottom: `1px solid ${C.lineSoft}` }}>
+        <div style={{ maxWidth: 720, margin: "0 auto", padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Mark />
+            <div>
+              <div style={{ fontFamily: SERIF, fontWeight: 800, fontSize: 17, lineHeight: 1 }}>T&amp;J Wellness Circle</div>
+              <div style={{ fontFamily: MONO, fontSize: 9.5, color: C.teal, letterSpacing: "0.22em", marginTop: 4 }}>MEMBER SHOP</div>
+            </div>
+          </div>
+          {stage === "shop" && cartCount > 0 && (
+            <button onClick={() => setStage("checkout")} aria-label={`Review order, ${cartCount} items, ${money(total)}`}
+              style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, background: C.teal, color: "#04140d", border: "none", borderRadius: 999, padding: "8px 14px", fontFamily: FONT, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#04140d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="M16 10a4 4 0 0 1-8 0" /></svg>
+              <span style={{ fontFamily: MONO }}>{cartCount} · {money(total)}</span>
+            </button>
+          )}
+          {stage !== "shop" && stage !== "done" && (
+            <Btn variant="ghost" size="sm" onClick={() => setStage("shop")}>← Keep shopping</Btn>
+          )}
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 120px" }}>
+        {catalogFailed && <CatalogUnavailable />}
+        {!catalogFailed && products === null && <CatalogSkeleton />}
+        {products !== null && stage === "shop" && (
+          <ShopScreen products={products} cart={cart} setQty={setQty} q={q} setQ={setQ} me={me} onForget={forgetMe} stock={stock} />
+        )}
+        {products !== null && stage === "checkout" && (
+          <CheckoutScreen products={products}
+            items={items} subtotal={subtotal} disc={disc} discAmt={discAmt} cashAmt={cashAmt}
+            deliveryFee={deliveryFee} total={total} setQty={setQty}
+            name={name} setName={setName} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone}
+            fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
+            pickDate={pickDate} setPickDate={setPickDate} pickupType={pickupType} setPickupType={setPickupType}
+            payment={payment} setPayment={setPayment} notes={notes} setNotes={setNotes}
+            recon={recon} setRecon={setRecon} reconFee={reconFee}
+            contactOk={contactOk} addressOk={addressOk} canPlace={canPlace} submitting={submitting}
+            me={me} onForget={forgetMe}
+            placeOrder={placeOrder} backToShop={() => setStage("shop")}
+          />
+        )}
+        {stage === "done" && placed && <DoneScreen order={placed} reset={reset} />}
+
+        <footer style={{ textAlign: "center", padding: "28px 16px 4px", color: C.textDim, fontFamily: MONO, fontSize: 10, letterSpacing: "0.14em" }}>
+          T&amp;J WELLNESS CIRCLE · SHOP v{SHOP_VERSION}
+        </footer>
+      </main>
+
+      {/* Sticky cart bar (mobile-friendly) */}
+      {stage === "shop" && cartCount > 0 && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 30, background: C.bg2, borderTop: `1px solid ${C.line}`, padding: "12px 16px", paddingBottom: "calc(12px + env(safe-area-inset-bottom))", boxShadow: "0 -8px 24px #0006" }}>
+        <div id="tj-cartbar" style={{ maxWidth: 720, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: C.textDim }}>{cartCount} {cartCount === 1 ? "item" : "items"}{disc ? ` · ${disc.pct}% off applied` : ""}</div>
+              <div style={{ fontWeight: 700, fontSize: 20, fontFamily: MONO, color: C.teal }}>{money(total)}</div>
+            </div>
+            <Btn size="lg" onClick={() => setStage("checkout")}>Review order →</Btn>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------- SHOP SCREEN ------------------------------- */
+/* ---- Loading + failure states -------------------------------------------
+   The rule: a number must never appear before it is true. Empty -> real value.
+   Never wrong -> right. So while the catalog is in flight we show shaped grey
+   boxes containing NO digits, and if it never arrives we say so plainly rather
+   than showing a figure we cannot stand behind. Silence is honest. A stale
+   price is not. ----------------------------------------------------------- */
+function CatalogSkeleton() {
+  const bar = (w, h) => ({ width: w, height: h, borderRadius: 6, background: C.line, opacity: 0.55 });
+  return (
+    <div aria-busy="true" aria-label="Loading catalog">
+      <div style={{ ...bar("46%", 15), marginBottom: 18 }} />
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <div key={i} style={{ display: "flex", gap: 12, alignItems: "center",
+                              padding: "14px 0", borderBottom: "1px solid " + C.line }}>
+          <div style={{ ...bar(46, 46), borderRadius: 10, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ ...bar((58 + ((i * 13) % 26)) + "%", 13), marginBottom: 8 }} />
+            <div style={{ ...bar((34 + ((i * 7) % 18)) + "%", 10) }} />
+          </div>
+          <div style={{ ...bar(52, 15), flexShrink: 0 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+function CatalogUnavailable() {
+  return (
+    <div style={{ textAlign: "center", padding: "56px 20px" }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 8 }}>
+        Catalog unavailable
+      </div>
+      <div style={{ fontSize: 13.5, color: C.textDim, lineHeight: 1.6, maxWidth: 350, margin: "0 auto 20px" }}>
+        We could not reach our price list, so we are not showing one — any price here
+        would be a guess. Please try again in a moment.
+      </div>
+      <Btn onClick={() => window.location.reload()}>Retry</Btn>
+      <div style={{ fontSize: 12, color: C.textDim, marginTop: 22 }}>
+        Need something now? Text {PHONE}.
+      </div>
+    </div>
+  );
+}
+
+function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock }) {
+  const [catFilter, setCatFilter] = useState("all");
+  const shopSubtotal = products.reduce((a, p) => a + (cart[p.id] || 0) * (p.price || 0), 0);
+  const filtered = products.filter((p) => !q || (p.name + " " + p.desc).toLowerCase().includes(q.toLowerCase()));
+  const present = SHOP_CATS.filter((c) => filtered.some((p) => categoryOf(p) === c));
+  const shown = catFilter === "all" || !present.includes(catFilter) ? present : [catFilter];
+  return (
+    <div>
+      {me?.name && (
+        <div style={{ background: C.surface, border: `1px solid ${C.tealDim}`, borderRadius: 12, padding: "11px 14px", marginBottom: 14, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <span>Welcome back, <b>{me.name.split(" ")[0]}</b>. Details are saved on this device.</span>
+          <button onClick={onForget} style={{ flexShrink: 0, background: "transparent", border: `1px solid ${C.line}`, color: C.teal, borderRadius: 8, padding: "6px 12px", fontFamily: FONT, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Not you? New customer</button>
+        </div>
+      )}
+      <Hero />
+      <div style={{ display: "flex", alignItems: "center", gap: 11, background: "linear-gradient(135deg,#0f3b26,#14776a)", border: `1px solid ${C.teal}`, borderRadius: 14, padding: "12px 15px", marginBottom: 14, boxShadow: "0 4px 16px rgba(20,119,106,.25)" }}>
+        <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">💵</span>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#eafaf3" }}>Instant 5% off when you pay cash <span style={{ fontWeight: 500, color: "rgba(234,250,243,.82)" }}>— just choose “Cash” at checkout.</span></div>
+      </div>
+      <SaveBar subtotal={shopSubtotal} />
+      <div style={{ display: "flex", gap: 9, alignItems: "flex-start", background: C.surface, border: `1px solid ${C.tealDim}`, borderRadius: 12, padding: "11px 13px", marginBottom: 16, fontSize: 12.5, lineHeight: 1.5, color: C.text }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" /></svg>
+        <div><b>Comparing prices?</b> Check the vial size first — ours are often larger. Find the same size cheaper and we'll match it.</div>
+      </div>
+      <Input value={q} onChange={setQ} placeholder="Search products…" style={{ marginBottom: 16 }} />
+
+      {present.length > 1 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
+          {["all", ...present].map((c) => {
+            const on = catFilter === c || (c === "all" && (catFilter === "all" || !present.includes(catFilter)));
+            return (
+              <button key={c} onClick={() => setCatFilter(c)} style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0, padding: "8px 13px", borderRadius: 999, fontFamily: FONT, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", border: `1px solid ${on ? "transparent" : C.line}`, background: on ? (c === "all" ? C.teal : catMeta(c).cc) : C.surface, color: on ? "#03110c" : C.textDim }}>{c !== "all" && <span style={{ width: 8, height: 8, borderRadius: "50%", background: on ? "#03110c" : catMeta(c).cc }} />}{c === "all" ? "All" : catLabel(c)}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {shown.map((cat) => {
+        const list = filtered.filter((p) => categoryOf(p) === cat).slice().sort(byNameThenSize);
+        if (!list.length) return null;
+        return (
+          <section key={cat} style={{ marginBottom: 22 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 11, marginBottom: 12 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", background: catMeta(cat).cb }}><CatIcon cat={cat} size={19} /></div>
+              <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: catMeta(cat).cc, fontWeight: 500 }}>{cat}</div>
+              <div style={{ flex: 1, height: 1, background: C.lineSoft }} />
+            </div>
+            <div style={{ display: "grid", gap: 11 }}>
+              {cat === "Supplies"
+                ? list.map((p) => <ProductRow key={p.id} p={p} qty={cart[p.id] || 0} setQty={setQty} st={stock ? stock[p.id] : undefined} loading={stock === null} />)
+                : cat === "Stacks & Bundles"
+                ? list.map((p) => <StackCard key={p.id} p={p} qty={cart[p.id] || 0} setQty={setQty} st={stock ? stock[p.id] : undefined} loading={stock === null} products={products} />)
+                : groupByCompound(list).map((grp) => <CompoundCard key={grp.key} grp={grp} cart={cart} setQty={setQty} stock={stock} />)}
+            </div>
+          </section>
+        );
+      })}
+      {filtered.length === 0 && (
+        <div style={{ color: C.textDim, textAlign: "center", padding: "40px 0" }}>No products match “{q}”.</div>
+      )}
+    </div>
+  );
+}
+
+/* ---- COA + Learn chips (bring the Hub's trust assets to the point of sale) - */
+function TrustChips({ p }) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+      <a href={coaLink()} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.03em", textTransform: "uppercase", color: C.green, border: "1px solid rgba(74,222,128,.35)", background: "rgba(74,222,128,.07)", borderRadius: 7, padding: "4px 8px", textDecoration: "none", cursor: "pointer" }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>Tested · COA ↗
+      </a>
+      <a href={learnLink(p)} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.03em", textTransform: "uppercase", color: C.teal, border: `1px solid ${C.tealDim}`, borderRadius: 7, padding: "4px 8px", textDecoration: "none", cursor: "pointer" }}>Learn ↗</a>
+    </div>
+  );
+}
+
+/* group a category's SKUs into one card per compound (sizes ordered smallest→largest) */
+function groupByCompound(list) {
+  const map = new Map();
+  list.forEach((p) => {
+    const base = compoundName(p);
+    if (!map.has(base)) map.set(base, []);
+    map.get(base).push(p);
+  });
+  return [...map.entries()].map(([base, skus]) => ({
+    key: base, base,
+    skus: skus.slice().sort((a, b) => { const [ax, ay] = sizeKey(a.name), [bx, by] = sizeKey(b.name); return ax - bx || ay - by; }),
+  }));
+}
+
+/* one size line inside a compound card: label · price · live stock · add/stepper */
+function SizeRow({ sku, qty, setQty, st, single }) {
+  const known = st && typeof st.available === "number";
+  const available = known ? st.available : null;
+  const inbound = known ? st.inbound : 0;
+  const blocked = known && available <= 0;
+  const dot = (color) => <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />;
+  let stockLine = null;
+  if (st === undefined) stockLine = null;
+  else if (!known) stockLine = null;
+  else if (available > 0) stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.green }}>{dot(C.green)}{available} in stock</span>;
+  else stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.amber }}>{dot(C.amber)}Out{inbound > 0 ? " · restocking" : ""}</span>;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: qty > 0 ? "rgba(60,186,125,.07)" : C.bg, border: `1px solid ${qty > 0 ? C.tealDim : C.lineSoft}`, borderRadius: 11, padding: "9px 11px", opacity: blocked ? 0.6 : 1 }}>
+      <div style={{ minWidth: 0 }}>
+        <span style={{ fontFamily: MONO, fontWeight: 500, fontSize: 13.5, color: C.text }}>{sizeLabel(sku)}</span>
+        {stockLine && <div style={{ fontFamily: MONO, fontSize: 10.5, marginTop: 2 }}>{stockLine}</div>}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <span style={{ fontFamily: MONO, fontSize: 15, color: C.teal, fontWeight: 500 }}>{money(sku.price)}</span>
+        {blocked ? (
+          <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: C.amber, border: `1px solid ${C.line}`, borderRadius: 8, padding: "7px 10px", whiteSpace: "nowrap" }}>Sold out</span>
+        ) : qty === 0 ? (
+          <Btn size="sm" onClick={() => setQty(sku.id, 1)}>Add</Btn>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 3, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 2 }}>
+            <Stepper label="−" onClick={() => setQty(sku.id, qty - 1)} />
+            <span style={{ width: 26, textAlign: "center", fontFamily: MONO, fontSize: 15 }}>{qty}</span>
+            <Stepper label="+" onClick={() => setQty(sku.id, qty + 1)} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ONE card per compound — molecule blurb up top, sizes only where price shows */
+function CompoundCard({ grp, cart, setQty, stock }) {
+  const first = grp.skus[0];
+  const cat = categoryOf(first);
+  const m = catMeta(cat);
+  const desc = compoundDesc(grp.base, first.desc);
+  const anyInCart = grp.skus.some((s) => (cart[s.id] || 0) > 0);
+  const multi = grp.skus.length > 1;
+  return (
+    <div style={{ position: "relative", overflow: "hidden", background: C.surface, border: `1px solid ${anyInCart ? C.tealDim : C.lineSoft}`, borderRadius: 18, padding: 14, transition: "border-color .15s" }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: m.cc }} />
+      <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
+        <div style={{ width: 66, height: 66, flexShrink: 0, borderRadius: 14, background: `radial-gradient(circle at 50% 26%, ${m.cb}, #0a1610)`, border: `1px solid ${C.lineSoft}`, display: "grid", placeItems: "center" }}>
+          <div style={{ width: 40, height: 40 }}><VialArt color={m.cc} /></div>
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: SERIF, fontWeight: 700, fontSize: 20, lineHeight: 1.1, color: C.text }}>{grp.base}</span>
+            {multi && <span style={{ fontFamily: MONO, fontSize: 10, color: C.textDim }}>{grp.skus.length} sizes</span>}
+          </div>
+          <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 4, lineHeight: 1.45 }}>{desc}</div>
+          <TrustChips p={first} />
+        </div>
+      </div>
+      <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+        {grp.skus.map((sku) => (
+          <SizeRow key={sku.id} sku={sku} qty={cart[sku.id] || 0} setQty={setQty} st={stock ? stock[sku.id] : undefined} single={!multi} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const STACK_TAG = {
+  "Metabolic Stack": "Fat loss + mitochondria",
+  "Nootropic Stack": "Focus + calm",
+  "Sleep & Longevity Stack": "Deep sleep + longevity",
+  "Full Recovery Stack": "Total injury repair",
+};
+/* Stack card — availability derived from component stock (never manual) */
+function StackCard({ p, qty, setQty, st, loading, products }) {
+  const m = catMeta("Stacks & Bundles");
+  const known = st && typeof st.available === "number";
+  const available = known ? st.available : null;
+  const blocked = known && available <= 0;
+  const title = (p.name || "").replace(/\s*\(.*\)\s*$/, "").trim();
+  const parts = stackRefs(p);
+  const sum = parts.reduce((s, ref) => s + ((resolveRef(products, ref) || {}).price || 0), 0);
+  const save = Math.max(0, sum - p.price);
+  const tag = STACK_TAG[title] || "Bundle · save vs singles";
+  return (
+    <div style={{ position: "relative", overflow: "hidden", background: "linear-gradient(150deg, #14311f, #0e2416)", border: `1px solid ${qty > 0 ? m.cc : C.tealDim}`, borderRadius: 18, padding: 15, opacity: blocked ? 0.62 : 1 }}>
+      <div style={{ position: "absolute", right: -30, top: -30, width: 120, height: 120, borderRadius: "50%", background: `radial-gradient(circle, ${m.cb}, transparent 70%)`, pointerEvents: "none" }} />
+      <div style={{ position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: SERIF, fontWeight: 700, fontSize: 19, color: C.text }}>{title}</span>
+          {save > 0 && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 500, color: "#4a2f00", background: C.amber, borderRadius: 6, padding: "3px 7px" }}>SAVE {money(save)}</span>}
+        </div>
+        <div style={{ color: m.cc, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 4 }}>{tag}</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "12px 0" }}>
+          {parts.map((nm, i) => {
+            const comp = resolveRef(products, nm);
+            return (
+              <div key={nm} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: C.text }}>
+                <span style={{ fontFamily: MONO, color: m.cc, fontSize: 13 }}>{i === 0 ? "•" : "+"}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{comp ? displayName(comp) : nm}</span>
+                {comp && <span style={{ fontFamily: MONO, fontSize: 11.5, color: C.textDim }}>{money(comp.price)}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9 }}>
+            <span style={{ fontFamily: MONO, fontSize: 22, fontWeight: 500, color: m.cc }}>{money(p.price)}</span>
+            {sum > p.price && <span style={{ fontFamily: MONO, fontSize: 13, color: C.textDim, textDecoration: "line-through" }}>{money(sum)}</span>}
+          </div>
+          {blocked ? (
+            <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: C.amber, border: `1px solid ${C.line}`, borderRadius: 9, padding: "9px 12px" }}>Sold out</span>
+          ) : qty === 0 ? (
+            <Btn size="sm" onClick={() => setQty(p.id, 1)}>Add stack</Btn>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 3, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: 2 }}>
+              <Stepper label="−" onClick={() => setQty(p.id, qty - 1)} />
+              <span style={{ width: 26, textAlign: "center", fontFamily: MONO, fontSize: 15 }}>{qty}</span>
+              <Stepper label="+" onClick={() => setQty(p.id, qty + 1)} />
+            </div>
+          )}
+        </div>
+        {blocked && <div style={{ fontFamily: MONO, fontSize: 10.5, color: C.amber, marginTop: 8 }}>A component is out of stock — back soon.</div>}
+      </div>
+    </div>
+  );
+}
+
+function ProductRow({ p, qty, setQty, st, loading }) {
+  // st: { onHand, reserved, available, inbound } | undefined (unknown)
+  const known = st && typeof st.available === "number";
+  const available = known ? st.available : null;
+  const inbound = known ? st.inbound : 0;
+  const inStock = known && available > 0;
+  const blocked = known && available <= 0;            // out of stock (incl. inbound-only): NOT orderable
+  const cat = categoryOf(p);
+  const m = catMeta(cat);
+  const isSupply = p.cat === "supply";
+
+  const dot = (color) => <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />;
+  let stockLine = null;
+  if (loading) {
+    stockLine = <span style={{ color: C.textDim }}>Checking stock…</span>;
+  } else if (inStock) {
+    stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.green }}>{dot(C.green)}{available} in stock</span>;
+  } else if (blocked) {
+    stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.amber }}>{dot(C.amber)}Out of stock{inbound > 0 ? <span style={{ color: C.textDim }}> · restocking soon</span> : null}</span>;
+  }
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", background: C.surface, border: `1px solid ${qty > 0 ? C.tealDim : C.lineSoft}`, borderRadius: 16, padding: 13, display: "flex", gap: 12, alignItems: "flex-start", transition: "border-color .15s", opacity: blocked ? 0.6 : 1 }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: m.cc }} />
+      <div style={{ width: 74, height: 74, flexShrink: 0, borderRadius: 12, background: `radial-gradient(circle at 50% 30%, ${m.cb}, #0a1610)`, border: `1px solid ${C.lineSoft}`, display: "grid", placeItems: "center" }}>
+        <div style={{ width: 44, height: 44 }}><VialArt color={m.cc} supply={isSupply} /></div>
+      </div>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 700, fontSize: 15.5 }}>{displayName(p)}</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: C.textDim }}>{unitForm(p.unit)}</span>
+        </div>
+        <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 3, lineHeight: 1.4 }}>{p.desc}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: MONO, fontSize: 15, color: C.teal, fontWeight: 500 }}>{money(p.price)}</span>
+          {stockLine && <span style={{ fontFamily: MONO, fontSize: 11.5 }}>{stockLine}</span>}
+        </div>
+        {!isSupply && (
+          <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.03em", textTransform: "uppercase", color: C.green, border: "1px solid rgba(52,211,153,.35)", background: "rgba(52,211,153,.06)", borderRadius: 7, padding: "4px 8px" }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>Tested · COA
+            </span>
+            <a href={HUB_URL} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.03em", textTransform: "uppercase", color: C.teal, border: `1px solid ${C.tealDim}`, borderRadius: 7, padding: "4px 8px", textDecoration: "none", cursor: "pointer" }}>Learn ↗</a>
+          </div>
+        )}
+      </div>
+      <div style={{ flexShrink: 0, alignSelf: "center" }}>
+        {blocked ? (
+          <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: C.amber, border: `1px solid ${C.line}`, borderRadius: 9, padding: "9px 12px", whiteSpace: "nowrap" }}>Sold out</span>
+        ) : qty === 0 ? (
+          <Btn size="sm" variant="solid" onClick={() => setQty(p.id, 1)}>Add</Btn>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: 3 }}>
+            <Stepper label="−" onClick={() => setQty(p.id, qty - 1)} />
+            <input value={qty} onChange={(e) => setQty(p.id, parseInt(e.target.value.replace(/\D/g, "")) || 0)}
+              style={{ width: 34, textAlign: "center", background: "transparent", border: "none", color: C.text, fontFamily: MONO, fontSize: 16, outline: "none" }} />
+            <Stepper label="+" onClick={() => setQty(p.id, qty + 1)} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function Stepper({ label, onClick }) {
+  return <button onClick={onClick} style={{ width: 36, height: 36, borderRadius: 8, border: "none", background: C.surface2, color: C.teal, fontSize: 20, fontWeight: 700, cursor: "pointer", lineHeight: 1 }}>{label}</button>;
+}
+
+/* ----------------------------- CHECKOUT SCREEN ----------------------------- */
+function CheckoutScreen(props) {
+  const { items, subtotal, disc, discAmt, cashAmt, deliveryFee, total, setQty,
+    name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
+    address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
+    recon, setRecon, reconFee,
+    contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
+
+  if (items.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "60px 0", color: C.textDim }}>
+        <div style={{ marginBottom: 14 }}>Your cart is empty.</div>
+        <Btn onClick={backToShop}>Browse the catalog</Btn>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <h1 style={{ fontSize: 22, fontWeight: 700, margin: "2px 0 16px" }}>Review & checkout</h1>
+
+      {me && me.name && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "10px 14px", marginBottom: 16 }}>
+          <div style={{ color: C.text, fontSize: 13.5 }}>Welcome back, <b>{me.name.split(" ")[0]}</b> — your details are filled in.</div>
+          <button onClick={onForget} style={{ background: "none", border: "none", color: C.textDim, fontFamily: FONT, fontSize: 12.5, textDecoration: "underline", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>Not you?</button>
+        </div>
+      )}
+
+      {/* Cart */}
+      <Section title="Your order">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {items.map((it) => (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 600 }}>{displayName(it)}</div>
+                <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.textDim }}>{money(it.price)} · {unitForm(it.unit)}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 3, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, padding: 2 }}>
+                  <Stepper label="−" onClick={() => setQty(it.id, it.qty - 1)} />
+                  <span style={{ width: 26, textAlign: "center", fontFamily: MONO, fontSize: 14 }}>{it.qty}</span>
+                  <Stepper label="+" onClick={() => setQty(it.id, it.qty + 1)} />
+                </div>
+                <div style={{ fontFamily: MONO, fontSize: 14, minWidth: 62, textAlign: "right" }}>{money(it.price * it.qty)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Don't forget — supplies add-on */}
+      <Section title="Don't forget">
+        <div style={{ color: C.textDim, fontSize: 12.5, marginBottom: 10, lineHeight: 1.4 }}>
+          Reconstituting at home? Add your bac water and needles now so you're not caught without them.
+        </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {products.filter((p) => p.cat === "supply").map((p) => {
+            const inCart = (items.find((i) => i.id === p.id) || {}).qty || 0;
+            return (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: C.surface, border: `1px solid ${inCart > 0 ? C.teal : C.line}`, borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{displayName(p)}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 11.5, color: C.textDim }}>{money(p.price)} · {unitForm(p.unit)}</div>
+                </div>
+                {inCart > 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 3, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 9, padding: 2 }}>
+                    <Stepper label="−" onClick={() => setQty(p.id, inCart - 1)} />
+                    <span style={{ width: 26, textAlign: "center", fontFamily: MONO, fontSize: 14 }}>{inCart}</span>
+                    <Stepper label="+" onClick={() => setQty(p.id, inCart + 1)} />
+                  </div>
+                ) : (
+                  <button onClick={() => setQty(p.id, 1)} style={{ fontFamily: FONT, fontWeight: 700, fontSize: 13, cursor: "pointer", border: `1.5px solid ${C.teal}`, background: "transparent", color: C.teal, borderRadius: 9, padding: "8px 14px", whiteSpace: "nowrap" }}>+ Add</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      {/* Discount progress — same live bar as the shop, as a reward at checkout */}
+      <SaveBar subtotal={subtotal} checkout />
+
+      {/* Contact — email OR phone required */}
+      <Section title="Your details">
+        <div style={{ marginBottom: 12 }}>
+          <Label>Full name *</Label>
+          <Input value={name} onChange={setName} placeholder="First and last name" />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <Label>Email or phone * (either one is fine)</Label>
+          <div style={{ display: "grid", gap: 8 }}>
+            <Input value={email} onChange={setEmail} placeholder="you@email.com" type="email" />
+            <Input value={phone} onChange={setPhone} placeholder="Phone number" type="tel" />
+          </div>
+        </div>
+        {!contactOk && (name || email || phone) && (
+          <div style={{ color: C.amber, fontSize: 12.5, marginTop: 4 }}>Add your name and at least one of email or phone.</div>
+        )}
+      </Section>
+
+      {/* Fulfillment */}
+      <Section title="How do you want it?">
+        <div style={{ display: "grid", gap: 8 }}>
+          <Choice active={fulfil === "pickup"} onClick={() => setFulfil("pickup")} title="Pickup · Free" sub="Maple Ridge, on a day you choose" />
+          <Choice active={fulfil === "shipping"} onClick={() => { if (recon) return; setFulfil("shipping"); }} title={`Shipping · ${money(SHIP_FEE)} flat`} sub={recon ? "Not available with reconstitution, mixed vials must stay cold" : "Dry product only, you mix on arrival"} />
+          <Choice active={fulfil === "delivery"} onClick={() => setFulfil("delivery")} title={`Delivery · ${money(DELIVERY_FEE)} flat`} sub="Tri-Cities & Abbotsford, we coordinate a time" />
+        </div>
+
+        {fulfil === "pickup" && (
+          <div style={{ marginTop: 12 }}>
+            <Label>Pickup day *</Label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              {upcomingDays(5).map((d) => {
+                const on = pickDate === d.iso;
+                return (
+                  <button key={d.iso} onClick={() => setPickDate(d.iso)}
+                    style={{ fontFamily: FONT, fontSize: 13.5, fontWeight: 600, cursor: "pointer",
+                      padding: "9px 13px", borderRadius: 10, whiteSpace: "nowrap",
+                      border: `1.5px solid ${on ? C.teal : C.line}`,
+                      background: on ? C.teal : C.bg, color: on ? "#04211d" : C.text }}>
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ color: C.textDim, fontSize: 12, marginBottom: 6 }}>or pick another day:</div>
+            <Input type="date" value={pickDate} onChange={setPickDate}
+              style={!pickDate ? { border: `1.5px solid ${C.red}`, background: "rgba(214,69,69,0.07)" } : {}} />
+            {!pickDate && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>Choose your pickup day to place the order.</div>}
+            <div style={{ marginTop: 14 }}>
+              <Label>How would you like to pick up? *</Label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: !pickupType ? 8 : 0, border: !pickupType ? `1.5px solid ${C.red}` : "none", borderRadius: 12, background: !pickupType ? "rgba(214,69,69,0.07)" : "transparent" }}>
+                <Choice active={pickupType === "contactless"} onClick={() => setPickupType("contactless")} title="Contactless" sub="No-touch, grab it on your day" />
+                <Choice active={pickupType === "consult"} onClick={() => setPickupType("consult")} title="Consult" sub="Meet with us, book below" />
+              </div>
+              {!pickupType && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>Choose contactless or consult pickup to place the order.</div>}
+            </div>
+            {pickupType === "consult" && (
+              <div style={{ marginTop: 10, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12 }}>
+                <div style={{ color: C.text, fontSize: 14, marginBottom: 8, lineHeight: 1.4 }}>Book your consult so we can set a time on your pickup day.</div>
+                <Btn size="sm" onClick={() => { const u = new URL(CALENDLY_CONSULT_URL); if (name.trim()) u.searchParams.set("name", name.trim()); if (email.trim()) u.searchParams.set("email", email.trim()); window.open(u.toString(), "_blank", "noopener"); }}>Book consult →</Btn>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(fulfil === "shipping" || fulfil === "delivery") && (
+          <div style={{ marginTop: 12 }}>
+            <Label>{fulfil === "shipping" ? "Ship-to address *" : "Delivery address *"}</Label>
+            <Input value={address} onChange={setAddress} placeholder="Street, city, postal code"
+              style={!address.trim() ? { border: `1.5px solid ${C.red}`, background: "rgba(214,69,69,0.07)" } : {}} />
+            {!address.trim() && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>Enter your {fulfil === "shipping" ? "shipping" : "delivery"} address to place the order.</div>}
+            <div style={{ color: C.textDim, fontSize: 12, marginTop: 6 }}>{fulfil === "shipping" ? "We ship dry product, unmixed peptides and bac water. Reconstitute on arrival and refrigerate." : `Delivery is Tri-Cities and Abbotsford only, flat ${money(DELIVERY_FEE)}. We'll message you to set a time that works for both of us.`}</div>
+          </div>
+        )}
+      </Section>
+
+      {/* Payment */}
+      <Section title="Payment">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <Choice active={payment === "etransfer"} onClick={() => setPayment("etransfer")} title="E-Transfer" sub="Details shown after you order" />
+          <Choice active={payment === "cash"} onClick={() => setPayment("cash")} title="Cash — save 5%" sub="5% off your total · pay by envelope in the cash box" />
+        </div>
+      </Section>
+
+      {/* Reconstitution */}
+      <Section title="Reconstitution">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <Choice active={recon === true} onClick={() => { setRecon(true); if (fulfil === "shipping") setFulfil("pickup"); }} title={`Yes · +${money(RECON_FEE)}`} sub="We mix it, ready to use" />
+          <Choice active={recon === false} onClick={() => setRecon(false)} title="No" sub="You mix it yourself" />
+        </div>
+        {recon && <div style={{ color: C.textDim, fontSize: 12, marginTop: 8, lineHeight: 1.4 }}>Mixed vials must stay refrigerated, so reconstituted orders are pickup or delivery only, never shipped.</div>}
+      </Section>
+
+      {/* Notes */}
+      <Section title="Notes (optional)">
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything we should know…" rows={3}
+          style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none", resize: "vertical" }} />
+      </Section>
+
+      {/* Totals */}
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+        <Row k="Subtotal" v={money(subtotal)} />
+        {disc && <Row k={disc.label} v={`−${money(discAmt)}`} accent={C.green} />}
+        {deliveryFee > 0 && <Row k={fulfil === "shipping" ? "Shipping" : "Delivery"} v={money(deliveryFee)} />}
+        {reconFee > 0 && <Row k="Reconstitution" v={money(reconFee)} />}
+        {cashAmt > 0 && <Row k={`Cash discount (${CASH_PCT}%)`} v={`−${money(cashAmt)}`} accent={C.green} />}
+        <div style={{ height: 1, background: C.lineSoft, margin: "10px 0" }} />
+        <Row k="Total" v={money(total)} big />
+      </div>
+
+      {!canPlace && !submitting && (() => {
+        const missing = [];
+        if (items.length === 0) missing.push("add at least one item to your cart");
+        if (!name.trim()) missing.push("enter your name");
+        if (!(email.trim() || phone.trim())) missing.push("enter an email or phone number");
+        if (fulfil === "pickup" && !pickDate) missing.push("choose your pickup day");
+        if (fulfil === "pickup" && !pickupType) missing.push("choose contactless or consult pickup");
+        if ((fulfil === "shipping" || fulfil === "delivery") && !address.trim()) missing.push("enter your " + (fulfil === "shipping" ? "shipping" : "delivery") + " address");
+        if (missing.length === 0) return null;
+        return (
+          <div style={{ background: "rgba(214,69,69,0.10)", border: `1px solid ${C.red}`, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+            <div style={{ color: C.red, fontWeight: 700, fontSize: 13.5, marginBottom: missing.length > 1 ? 6 : 0 }}>
+              {missing.length === 1 ? "One more thing before you can order:" : "A few things before you can order:"}
+            </div>
+            {missing.length === 1
+              ? <div style={{ color: C.text, fontSize: 13.5 }}>Please {missing[0]}.</div>
+              : <ul style={{ margin: "2px 0 0", paddingLeft: 18, color: C.text, fontSize: 13.5, lineHeight: 1.5 }}>
+                  {missing.map((m, i) => <li key={i}>Please {m}.</li>)}
+                </ul>}
+          </div>
+        );
+      })()}
+
+      <Btn size="lg" style={{ width: "100%" }} disabled={!canPlace} onClick={placeOrder}>
+        {submitting ? "Placing order…" : `Place order · ${money(total)}`}
+      </Btn>
+      <div style={{ color: C.textDim, fontSize: 12, textAlign: "center", marginTop: 10 }}>
+        No payment is taken here. You'll get e-transfer details and a booking link on the next screen.
+      </div>
+    </div>
+  );
+}
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textDim, marginBottom: 9 }}>{title}</div>
+      <div style={{ background: C.surface, border: `1px solid ${C.lineSoft}`, borderRadius: 14, padding: 14 }}>{children}</div>
+    </div>
+  );
+}
+function Choice({ active, onClick, title, sub }) {
+  return (
+    <button onClick={onClick} style={{ textAlign: "left", cursor: "pointer", background: active ? C.surface2 : C.bg, border: `1.5px solid ${active ? C.teal : C.line}`, borderRadius: 12, padding: "12px 13px" }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: active ? C.teal : C.text }}>{title}</div>
+      <div style={{ fontSize: 12, color: C.textDim, marginTop: 3 }}>{sub}</div>
+    </button>
+  );
+}
+function Row({ k, v, big, accent }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "3px 0" }}>
+      <span style={{ fontSize: big ? 16 : 13.5, fontWeight: big ? 700 : 500, color: accent || (big ? C.text : C.textDim) }}>{k}</span>
+      <span style={{ fontFamily: MONO, fontSize: big ? 20 : 14, fontWeight: 700, color: accent || (big ? C.teal : C.text) }}>{v}</span>
+    </div>
+  );
+}
+
+/* ----------------------------- CONFIRMATION -------------------------------- */
+function DoneScreen({ order, reset }) {
+  const [copied, setCopied] = useState(false);
+  const copy = (t) => { try { navigator.clipboard.writeText(t); setCopied(true); setTimeout(() => setCopied(false), 1600); } catch {} };
+  return (
+    <div style={{ animation: "tjpop .25s ease" }}>
+      <div style={{ textAlign: "center", padding: "18px 0 6px" }}>
+        <div style={{ width: 58, height: 58, borderRadius: "50%", background: `${C.green}22`, border: `1.5px solid ${C.green}`, display: "grid", placeItems: "center", margin: "0 auto 14px" }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+        </div>
+        <h1 style={{ fontSize: 23, fontWeight: 700, margin: "0 0 4px" }}>Order placed</h1>
+        <div style={{ fontFamily: MONO, color: C.textDim, fontSize: 13 }}>Order #{order.orderNum} · {money(order.total)}</div>
+      </div>
+
+      {/* Payment step */}
+      {order.payment === "etransfer" ? (
+        <div style={{ background: C.surface, border: `1px solid ${C.teal}`, borderRadius: 14, padding: 16, margin: "16px 0" }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>1 · Send your e-transfer</div>
+          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 12px", lineHeight: 1.5 }}>
+            Send <b style={{ color: C.teal }}>{money(order.total)}</b> by Interac e-transfer to the address below. Put your order number in the message so we can match it.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <CopyLine label="Send to" value={ETRANSFER_EMAIL} onCopy={copy} />
+            <CopyLine label="Message / reference" value={`Order #${order.orderNum}`} onCopy={copy} />
+            <CopyLine label="Amount" value={money(order.total)} onCopy={copy} />
+          </div>
+          {copied && <div style={{ color: C.green, fontSize: 12.5, marginTop: 8 }}>Copied.</div>}
+        </div>
+      ) : (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, margin: "16px 0" }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>1 · Cash — 5% off, pay by envelope</div>
+          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 10px", lineHeight: 1.5 }}>Your <b style={{ color: C.teal }}>5% cash discount</b> is already in the total below. Bring <b style={{ color: C.teal }}>{money(order.total)}</b> in cash at {order.fulfil === "delivery" ? "delivery" : order.fulfil === "shipping" ? "handoff" : "pickup"}.</p>
+          <ol style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
+            <li>Grab an envelope and write your <b>order #{order.orderNum}</b> and name on it.</li>
+            <li>Put <b>{money(order.total)}</b> cash inside and seal it.</li>
+            <li>Drop the envelope in the cash box — that's it, you're done.</li>
+          </ol>
+        </div>
+      )}
+
+      {/* Fulfillment step */}
+      {order.fulfil === "pickup" ? (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>2 · {order.pickupType === "consult" ? "Book your consult" : "Your pickup"}</div>
+          {order.pickupType === "consult" ? (
+            <>
+              <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 12px", lineHeight: 1.5 }}>
+                Pickup day: <b style={{ color: C.text }}>{order.pickDate || "TBD"}</b>. Book your consult so we can lock a time.
+              </p>
+              <Btn size="lg" style={{ width: "100%" }} onClick={() => {
+                const u = new URL(CALENDLY_CONSULT_URL);
+                if (order.customer.name) u.searchParams.set("name", order.customer.name);
+                if (order.customer.email) u.searchParams.set("email", order.customer.email);
+                window.open(u.toString(), "_blank", "noopener");
+              }}>Book consult →</Btn>
+            </>
+          ) : (
+            <p style={{ color: C.textDim, fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+              Contactless pickup on <b style={{ color: C.text }}>{order.pickDate || "your chosen day"}</b> in Maple Ridge. No appointment needed, we'll confirm the spot by text.
+            </p>
+          )}
+        </div>
+      ) : order.fulfil === "shipping" ? (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>2 · Shipping</div>
+          <p style={{ color: C.textDim, fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+            Shipping dry product to <b style={{ color: C.text }}>{order.address}</b> ({money(order.deliveryFee)} flat). Reconstitute on arrival and refrigerate. Allow a few days.
+          </p>
+        </div>
+      ) : (
+        <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>2 · Delivery</div>
+          <p style={{ color: C.textDim, fontSize: 14, margin: 0, lineHeight: 1.5 }}>
+            Delivering to <b style={{ color: C.text }}>{order.address}</b> ({money(order.deliveryFee)} flat, Tri-Cities / Abbotsford). We'll message you to confirm a time.
+          </p>
+        </div>
+      )}
+
+      <div style={{ color: C.textDim, fontSize: 13, textAlign: "center", marginBottom: 18 }}>
+        {order.customer.email ? <>A confirmation is on its way to <b style={{ color: C.text }}>{order.customer.email}</b>. </> : null}Questions? Text {PHONE}. A copy of your order is saved on this device.
+      </div>
+      <Btn variant="ghost" style={{ width: "100%" }} onClick={reset}>Place another order</Btn>
+    </div>
+  );
+}
+function CopyLine({ label, value, onCopy }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: C.textDim }}>{label}</div>
+        <div style={{ fontFamily: MONO, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+      </div>
+      <button onClick={() => onCopy(value)} style={{ flexShrink: 0, background: C.surface2, border: `1px solid ${C.line}`, color: C.teal, borderRadius: 8, padding: "7px 11px", fontSize: 12.5, fontFamily: FONT, fontWeight: 600, cursor: "pointer" }}>Copy</button>
+    </div>
+  );
+}
+
+if (typeof window !== "undefined") { window.TJShop = App; }
+        </script>
+
+    <!-- Loader: same mechanism as the tracker. Compiles the source above, mounts it,
+         and shows a real error instead of spinning forever if anything goes wrong. -->
+    <script>
+      (function () {
+        function fail(msg) {
+          var boot = document.getElementById("boot");
+          if (boot) boot.innerHTML =
+            '<div style="color:#f87171;font-family:DM Mono,monospace;padding:24px;text-align:center;max-width:340px;line-height:1.6">Shop failed to load:<br><br>' +
+            String(msg) + '<br><br>Check your connection and refresh.</div>';
+          if (window.console) console.error("Shop load error:", msg);
+        }
+        try {
+          if (!window.Babel) return fail("Babel did not load.");
+          if (!window.React || !window.ReactDOM) return fail("React did not load.");
+          var code = document.getElementById("shop-src").textContent;
+          var out = window.Babel.transform(code, { presets: [["react", { runtime: "classic" }]] }).code;
+          (0, eval)(out);
+          if (typeof window.TJShop !== "function") return fail("Shop code did not initialize.");
+          var boot = document.getElementById("boot");
+          if (boot) boot.remove();
+          window.ReactDOM.createRoot(document.getElementById("root")).render(
+            window.React.createElement(window.TJShop)
+          );
+        } catch (e) {
+          fail(e && e.message ? e.message : e);
+        }
+      })();
+    </script>
+
+    <!-- Floating "Ask Tara" widget — persistent, follows scroll, opens the live AI
+         advisor. Vanilla + self-contained so it drops into the Hub unchanged.
+         Reads the full live catalog server-side (endpoint handles her data). -->
+    <script>
+      (function () {
+        var ENDPOINT = "https://tjt-tracker.netlify.app/.netlify/functions/ask-tara";
+        var STREAM   = "https://tjt-tracker.netlify.app/.netlify/functions/ask-tara-stream";
+
+        /* Measured: catalog fetches 123ms (1%), Anthropic generating the reply
+           ~17s (99%). The old endpoint withholds every word until the last one is
+           written. Streaming shows the first words in about a second. Falls back
+           to the old endpoint on any failure, so this cannot take Tara down. */
+        async function streamAsk(hist, onText){
+          var res = await fetch(STREAM, {method:'POST', headers:{'Content-Type':'application/json'},
+                                         body: JSON.stringify({messages:hist})});
+          if(!res.ok || !res.body) throw new Error('stream_unavailable');
+          var reader=res.body.getReader(), dec=new TextDecoder(), buf='', full='';
+          for(;;){
+            var r=await reader.read();
+            if(r.done) break;
+            buf += dec.decode(r.value,{stream:true});
+            var lines=buf.split('\n'); buf=lines.pop()||'';
+            for(var i=0;i<lines.length;i++){
+              var line=lines[i];
+              if(line.indexOf('data:')!==0) continue;
+              var p=line.slice(5).trim(); if(!p) continue;
+              var ev; try{ ev=JSON.parse(p); }catch(e){ continue; }
+              if(ev.t){ full+=ev.t; onText(full); }
+              else if(ev.error){ throw new Error(ev.error); }
+              else if(ev.done){ return full; }
+            }
+          }
+          if(!full) throw new Error('empty_stream');
+          return full;
+        }
+        var CONSULT = "https://calendly.com/tjwellnesscircle/30min?back=1";
+        var history = [], busy = false, opened = false;
+
+        var css = document.createElement("style");
+        css.textContent = "\
+          #tjtara-fab{position:fixed;right:16px;bottom:20px;z-index:2147483000;display:flex;align-items:center;gap:9px;padding:13px 18px 13px 15px;border:none;border-radius:999px;cursor:pointer;font-family:'DM Sans',system-ui,sans-serif;font-weight:700;font-size:14.5px;color:#eafff3;background:linear-gradient(135deg,#1e6b4a,#2fa76e);box-shadow:0 10px 30px rgba(15,60,38,.5),inset 0 1px 0 rgba(255,255,255,.18);transition:transform .18s cubic-bezier(.34,1.56,.64,1),bottom .25s ease,opacity .2s;animation:tjtaraIn .5s cubic-bezier(.34,1.56,.64,1) both;}\
+          #tjtara-fab:hover{transform:translateY(-3px) scale(1.03);}\
+          #tjtara-fab:active{transform:scale(.97);}\
+          #tjtara-fab .tjt-ring{position:absolute;inset:0;border-radius:999px;box-shadow:0 0 0 0 rgba(47,167,110,.55);animation:tjtaraPulse 2.6s ease-out infinite;pointer-events:none;}\
+          #tjtara-fab .tjt-spark{width:22px;height:22px;flex-shrink:0;animation:tjtaraSpin 6s linear infinite;}\
+          @keyframes tjtaraPulse{0%{box-shadow:0 0 0 0 rgba(47,167,110,.5);}70%{box-shadow:0 0 0 16px rgba(47,167,110,0);}100%{box-shadow:0 0 0 0 rgba(47,167,110,0);}}\
+          @keyframes tjtaraIn{from{transform:translateY(24px) scale(.7);opacity:0;}to{transform:none;opacity:1;}}\
+          @keyframes tjtaraSpin{to{transform:rotate(360deg);}}\
+          #tjtara-ov{position:fixed;inset:0;background:rgba(6,16,10,.5);backdrop-filter:blur(2px);z-index:2147483200;opacity:0;pointer-events:none;transition:opacity .2s;}\
+          #tjtara-ov.open{opacity:1;pointer-events:auto;}\
+          #tjtara-panel{position:fixed;right:16px;bottom:20px;z-index:2147483400;width:384px;max-width:calc(100vw - 32px);height:min(600px,80vh);display:flex;flex-direction:column;background:linear-gradient(165deg,#0d1f14,#132a1c);border:1px solid #2a4d38;border-radius:22px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55);transform:translateY(20px) scale(.96);opacity:0;pointer-events:none;transition:transform .24s cubic-bezier(.34,1.3,.64,1),opacity .2s;font-family:'DM Sans',system-ui,sans-serif;}\
+          #tjtara-panel.open{transform:none;opacity:1;pointer-events:auto;}\
+          .tjt-head{display:flex;align-items:center;gap:11px;padding:16px 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:radial-gradient(360px 120px at 12% 0%,rgba(47,167,110,.22),transparent 70%);}\
+          .tjt-av{width:40px;height:40px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;background:linear-gradient(135deg,#2aaa70,#8fcfb8);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);}\
+          .tjt-av svg{width:22px;height:22px;}\
+          .tjt-htxt{flex:1;min-width:0;}\
+          .tjt-name{font-family:'Playfair Display',Georgia,serif;font-weight:800;font-size:18px;color:#f0faf4;line-height:1;}\
+          .tjt-sub{font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#7fc0a0;margin-top:5px;display:flex;align-items:center;gap:6px;}\
+          .tjt-dotlive{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80;}\
+          .tjt-x{width:32px;height:32px;flex-shrink:0;border:none;background:rgba(255,255,255,.07);color:#cfe6d9;border-radius:9px;cursor:pointer;font-size:16px;line-height:1;display:grid;place-items:center;}\
+          .tjt-x:hover{background:rgba(255,255,255,.14);}\
+          .tjt-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:11px;}\
+          .tjt-msgs::-webkit-scrollbar{width:5px;}.tjt-msgs::-webkit-scrollbar-thumb{background:rgba(47,167,110,.35);border-radius:6px;}\
+          .tjt-b{max-width:88%;line-height:1.55;font-size:14px;padding:11px 14px;}\
+          .tjt-b.ai{align-self:flex-start;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);border-radius:5px 15px 15px 15px;color:#eaf5ee;}\
+          .tjt-b.ai strong{color:#8fcfb8;}.tjt-b.ai a{color:#4ade80;}\
+          .tjt-b.me{align-self:flex-end;background:rgba(47,167,110,.24);border:1px solid rgba(47,167,110,.4);border-radius:15px 5px 15px 15px;color:#fff;}\
+          .tjt-b.typing{align-self:flex-start;color:#7fa992;font-style:italic;font-size:13px;border:none;background:none;padding:4px 4px;}\
+          .tjt-foot{padding:11px 13px 13px;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0;}\
+          .tjt-pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}\
+          .tjt-pill{background:rgba(47,167,110,.12);border:1px solid rgba(47,167,110,.3);border-radius:20px;padding:6px 12px;font-size:12px;color:#7fe0ad;cursor:pointer;font-family:inherit;transition:background .15s;}\
+          .tjt-pill:hover{background:rgba(47,167,110,.24);}\
+          .tjt-inrow{display:flex;gap:8px;align-items:flex-end;}\
+          .tjt-in{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:11px 13px;color:#fff;font-size:16px;font-family:inherit;resize:none;outline:none;line-height:1.45;max-height:96px;}\
+          .tjt-in::placeholder{color:rgba(255,255,255,.32);}\
+          .tjt-in:focus{border-color:rgba(47,167,110,.6);}\
+          .tjt-send{width:44px;height:44px;flex-shrink:0;border:none;border-radius:12px;background:#2fa76e;cursor:pointer;display:grid;place-items:center;}\
+          .tjt-send:hover{background:#268a5b;}.tjt-send:active{transform:scale(.94);}.tjt-send:disabled{opacity:.4;}\
+          .tjt-send svg{width:18px;height:18px;fill:#fff;}\
+          .tjt-disc{font-family:'DM Mono',monospace;font-size:9px;color:rgba(255,255,255,.3);text-align:center;margin-top:9px;line-height:1.5;}\
+          @media(max-width:520px){#tjtara-panel{right:8px;left:8px;bottom:8px;width:auto;max-width:none;height:82vh;border-radius:20px;}#tjtara-fab{padding:12px 16px 12px 13px;font-size:14px;}}";
+        document.head.appendChild(css);
+
+        var SPARK = '<svg class="tjt-spark" viewBox="0 0 24 24" fill="#eafff3"><path d="M12 2l1.9 5.6L19.5 9l-4.3 3.2L16.7 18 12 14.7 7.3 18l1.5-5.8L4.5 9l5.6-1.4z"/></svg>';
+        var SPARK2 = '<svg viewBox="0 0 24 24" fill="#0d1f14"><path d="M12 2l1.9 5.6L19.5 9l-4.3 3.2L16.7 18 12 14.7 7.3 18l1.5-5.8L4.5 9l5.6-1.4z"/></svg>';
+
+        var fab = document.createElement("button");
+        fab.id = "tjtara-fab";
+        fab.setAttribute("aria-label", "Ask Tara — your peptide guide");
+        fab.innerHTML = '<span class="tjt-ring"></span>' + SPARK + '<span>Ask Tara</span>';
+        document.body.appendChild(fab);
+
+        var ov = document.createElement("div"); ov.id = "tjtara-ov"; document.body.appendChild(ov);
+        var panel = document.createElement("div"); panel.id = "tjtara-panel";
+        panel.innerHTML =
+          '<div class="tjt-head"><div class="tjt-av">' + SPARK2 + '</div>' +
+          '<div class="tjt-htxt"><div class="tjt-name">Tara</div><div class="tjt-sub"><span class="tjt-dotlive"></span>Your peptide guide</div></div>' +
+          '<button class="tjt-x" aria-label="Close">\u2715</button></div>' +
+          '<div class="tjt-msgs" id="tjt-msgs"></div>' +
+          '<div class="tjt-foot"><div class="tjt-pills" id="tjt-pills"></div>' +
+          '<div class="tjt-inrow"><textarea class="tjt-in" id="tjt-in" rows="1" placeholder="Tell me your goal\u2026"></textarea>' +
+          '<button class="tjt-send" id="tjt-send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M2 21L23 12 2 3v7l15 2-15 2v7z"/></svg></button></div>' +
+          '<div class="tjt-disc">Educational only · not medical advice · always consult a physician</div></div>';
+        document.body.appendChild(panel);
+
+        var msgs = panel.querySelector("#tjt-msgs");
+        var input = panel.querySelector("#tjt-in");
+        var send = panel.querySelector("#tjt-send");
+        var pillWrap = panel.querySelector("#tjt-pills");
+
+        function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+        function fmt(t){t=esc(t);t=t.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");t=t.replace(/(https?:\/\/[^\s]+)/g,'<a href="$1" target="_blank" rel="noreferrer">$1</a>');return t.replace(/\n/g,"<br>");}
+        function bubble(txt, role, raw){var d=document.createElement("div");d.className="tjt-b "+role;d.innerHTML=raw?txt:fmt(txt);msgs.appendChild(d);msgs.scrollTop=msgs.scrollHeight;return d;}
+
+        var greeted = false;
+        var QUICKS = ["Lose weight","Recovery & joints","Perimenopause","Energy & focus","TRT support","How do I mix & dose?"];
+        var QMAP = {"Lose weight":"I want to lose weight","Recovery & joints":"I have joint pain and need to recover from injuries","Perimenopause":"I'm a woman going through perimenopause","Energy & focus":"I need more energy and mental focus","TRT support":"I'm on TRT and want support","How do I mix & dose?":"How do I reconstitute and dose my peptides?"};
+        function renderPills(){pillWrap.innerHTML="";QUICKS.forEach(function(q){var b=document.createElement("button");b.className="tjt-pill";b.textContent=q;b.onclick=function(){input.value=QMAP[q]||q;submit();};pillWrap.appendChild(b);});}
+
+        function open(){
+          ov.classList.add("open"); panel.classList.add("open"); opened=true;
+          if(!greeted){greeted=true;bubble("Hey! I'm <strong>Tara</strong> \uD83D\uDC9A I help you match peptides to your goals \u2014 and I'll walk you through exactly how to mix and dose them.<br><br>What's going on with you? The more real you are, the better I can help.","ai",true);renderPills();}
+          setTimeout(function(){input.focus();},250);
+        }
+        function close(){ov.classList.remove("open");panel.classList.remove("open");opened=false;}
+        fab.onclick=function(){opened?close():open();};
+        ov.onclick=close;
+        panel.querySelector(".tjt-x").onclick=close;
+        input.addEventListener("input",function(){input.style.height="auto";input.style.height=Math.min(input.scrollHeight,96)+"px";});
+        input.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit();}});
+        send.onclick=submit;
+
+        async function submit(){
+          if(busy)return;var text=input.value.trim();if(!text)return;
+          pillWrap.style.display="none";
+          input.value="";input.style.height="auto";
+          busy=true;send.disabled=true;
+          bubble(text,"me");history.push({role:"user",content:text});
+          var typing=bubble("Tara is thinking\u2026","typing",true);
+          var live=null;
+          try{
+            var reply=await streamAsk(history,function(partial){
+              if(!live){ typing.remove(); live=bubble(partial,"ai"); }
+              else { live.innerHTML=fmt(partial); }
+              msgs.scrollTop=msgs.scrollHeight;
+            });
+            if(!live){ typing.remove(); live=bubble(reply,"ai"); }
+            history.push({role:"assistant",content:reply});
+          }catch(streamErr){
+            try{
+              var res=await fetch(ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history})});
+              var data=await res.json();
+              if(live){ live.remove(); live=null; }
+              typing.remove();
+              if(data.reply){bubble(data.reply,"ai");history.push({role:"assistant",content:data.reply});}
+              else{bubble((data.error||"I had a little trouble just now \u2014 try me again in a moment, or book a free consult: "+CONSULT),"ai");}
+            }catch(e){
+              if(live){ live.remove(); }
+              typing.remove();
+              bubble("Sorry, I couldn't connect right now. Give me a moment and try again \u2014 or book a free consult: "+CONSULT,"ai");
+            }
+          }
+          busy=false;send.disabled=false;input.focus();
+          if(window.__tjtShare) window.__tjtShare();
+        }
+
+        /* ---- Copy / Text / Email the conversation ---------------------------
+           Same three actions as the Hub. `sms:` and `mailto:` hand the text to
+           the phone's own Messages / Mail app with the body prefilled, so the
+           customer picks the recipient there — no typing a number into a form.
+           Copy is primary: it is the only one an OS URL-length limit cannot
+           truncate. -------------------------------------------------------- */
+        function transcript(){
+          var out=[];
+          msgs.querySelectorAll(".tjt-b").forEach(function(b){
+            if(b.classList.contains("typing")) return;
+            var who=b.classList.contains("me")?"Me":"Tara";
+            var t=(b.innerText||"").trim();
+            if(t) out.push(who+": "+t);
+          });
+          if(!out.length) return "";
+          return "Ask Tara — T&J Peptides\n"+new Date().toLocaleString()+"\n\n"+out.join("\n\n")
+            +"\n\n— Educational only, not medical advice. shop.tjwellnesscircle.ca";
+        }
+        var SI={copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+                text:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.9-.9L3 21l1.9-5A8.4 8.4 0 0 1 21 11.5z"/></svg>',
+                mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>'};
+        var shareCss=document.createElement("style");
+        shareCss.textContent="#tjt-share{display:none;gap:6px;padding:0 13px 10px;flex-wrap:wrap;}"
+          +"#tjt-share.on{display:flex;}"
+          +"#tjt-share button{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:8px 12px;"
+          +"border:1px solid rgba(47,167,110,.35);border-radius:999px;background:rgba(47,167,110,.1);color:#7fe0ad;"
+          +"font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;}"
+          +"#tjt-share button:hover{background:rgba(47,167,110,.22);}"
+          +"#tjt-share button.ok{background:#2fa76e;color:#04140c;}"
+          +"#tjt-share svg{width:14px;height:14px;}";
+        document.head.appendChild(shareCss);
+        var shareBar=document.createElement("div"); shareBar.id="tjt-share";
+        var cB=document.createElement("button"); cB.type="button"; cB.innerHTML=SI.copy+"Copy";
+        cB.onclick=async function(){
+          var t=transcript(); if(!t) return;
+          var ok=function(){var o=cB.innerHTML;cB.classList.add("ok");cB.innerHTML=SI.copy+"Copied";
+            setTimeout(function(){cB.innerHTML=o;cB.classList.remove("ok");},1600);};
+          try{ await navigator.clipboard.writeText(t); ok(); }
+          catch(e){ var ta=document.createElement("textarea"); ta.value=t; ta.setAttribute("readonly","");
+            ta.style.cssText="position:absolute;left:-9999px"; document.body.appendChild(ta);
+            ta.select(); ta.setSelectionRange(0,999999);
+            try{ document.execCommand("copy"); ok(); }catch(e2){ alert("Could not copy automatically — press and hold to select."); }
+            ta.remove(); }
+        };
+        var tB=document.createElement("button"); tB.type="button"; tB.innerHTML=SI.text+"Text it";
+        tB.onclick=function(){ var t=transcript(); if(!t) return;
+          var iOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+          location.href="sms:"+(iOS?"&":"?")+"body="+encodeURIComponent(t); };
+        var eB=document.createElement("button"); eB.type="button"; eB.innerHTML=SI.mail+"Email it";
+        eB.onclick=function(){ var t=transcript(); if(!t) return;
+          location.href="mailto:?subject="+encodeURIComponent("My Ask Tara conversation — T&J Peptides")+"&body="+encodeURIComponent(t); };
+        shareBar.appendChild(cB); shareBar.appendChild(tB); shareBar.appendChild(eB);
+        // `.tjt-foot` is built inside panel.innerHTML — there is no `foot` variable.
+        // I wrote one anyway; it would have thrown ReferenceError and killed the
+        // whole widget. The Shop's gate only parsed the React block, so it passed.
+        var footEl = panel.querySelector(".tjt-foot");
+        if (footEl && footEl.parentNode) footEl.parentNode.insertBefore(shareBar, footEl);
+        window.__tjtShare=function(){ shareBar.classList.toggle("on", msgs.querySelectorAll(".tjt-b.me").length>0); };
+
+        // keep the FAB clear of the sticky cart bar
+        function reposition(){var cart=document.getElementById("tj-cartbar");var b=cart?90:20;fab.style.bottom=b+"px";}
+        setInterval(reposition,600);reposition();
+      })();
+    </script>
+  </body>
+</html>
