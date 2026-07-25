@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.4.0-recon-checkout";
+const SHOP_VERSION = "2.4.1-round-note";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -589,6 +589,7 @@ function App() {
   const cashAmt = payment === "cash" ? +((goods * CASH_PCT) / 100).toFixed(2) : 0;
   const rawTotal = +(goods - discAmt - cashAmt + deliveryFee).toFixed(2);
   const total = payment === "cash" ? Math.floor(rawTotal) : rawTotal;
+  const roundAdj = payment === "cash" ? +(rawTotal - total).toFixed(2) : 0;
   const cartCount = items.reduce((s, it) => s + it.qty, 0);
 
   const setQty = (id, qty) => setCart((c) => ({ ...c, [id]: Math.max(0, qty) }));
@@ -642,7 +643,7 @@ function App() {
       await store.set(PENDING_KEY, [order, ...arr]);
       // 2) email notification (best-effort)
       const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
-      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
+      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
       /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ===== */
       fetch("https://app.tjwellnesscircle.ca/.netlify/functions/send-order-email", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -720,7 +721,7 @@ function App() {
         )}
         {products !== null && stage === "checkout" && (
           <CheckoutScreen products={products}
-            items={items} subtotal={subtotal} disc={disc} discAmt={discAmt} cashAmt={cashAmt}
+            items={items} subtotal={subtotal} disc={disc} discAmt={discAmt} cashAmt={cashAmt} roundAdj={roundAdj}
             deliveryFee={deliveryFee} total={total} setQty={setQty}
             name={name} setName={setName} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone}
             fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
@@ -1102,7 +1103,7 @@ function Stepper({ label, onClick }) {
 
 /* ----------------------------- CHECKOUT SCREEN ----------------------------- */
 function CheckoutScreen(props) {
-  const { items, subtotal, disc, discAmt, cashAmt, deliveryFee, total, setQty,
+  const { items, subtotal, disc, discAmt, cashAmt, roundAdj, deliveryFee, total, setQty,
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
     recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
@@ -1296,6 +1297,7 @@ function CheckoutScreen(props) {
         {disc && <Row k={disc.label} v={`−${money(discAmt)}`} accent={C.green} />}
         {deliveryFee > 0 && <Row k={fulfil === "shipping" ? "Shipping" : "Delivery"} v={money(deliveryFee)} />}
         {cashAmt > 0 && <Row k={`Cash discount (${CASH_PCT}%)`} v={`−${money(cashAmt)}`} accent={C.green} />}
+        {roundAdj > 0 && <Row k="Rounded down to nearest $" v={`−${money(roundAdj)}`} accent={C.green} />}
         <div style={{ height: 1, background: C.lineSoft, margin: "10px 0" }} />
         <Row k="Total" v={money(total)} big />
       </div>
