@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.4.2-vialcount-fix";
+const SHOP_VERSION = "2.4.3-email-retry";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -647,11 +647,20 @@ function App() {
       // 2) email notification (best-effort)
       const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
       const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
-      /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ===== */
-      fetch("https://app.tjwellnesscircle.ca/.netlify/functions/send-order-email", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: `New T&J Order #${orderNum}`, message: msg, orderNum, customerEmail: order.customer.email || "", customerName: order.customer.name || "" }),
-      }).catch(() => {});
+      /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ·
+         retries up to 4x with keepalive so a Netlify cold start (~2s) or a transient Resend blip can't silently drop your owner notification ===== */
+      (async () => {
+        const _emailBody = JSON.stringify({ subject: `New T&J Order #${orderNum}`, message: msg, orderNum, customerEmail: order.customer.email || "", customerName: order.customer.name || "" });
+        for (let _a = 1; _a <= 4; _a++) {
+          try {
+            const _r = await fetch("https://app.tjwellnesscircle.ca/.netlify/functions/send-order-email", {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: _emailBody, keepalive: true,
+            });
+            if (_r.ok) return;
+          } catch (e) {}
+          await new Promise((res) => setTimeout(res, 1200 * _a));
+        }
+      })();
       /* ===== END T&J BACKEND ===== */
     } catch (e) {
       console.error("Order submit error", e);
