@@ -71,7 +71,7 @@ const { createClient } = (window.supabase || {});
    Bump this on every change so builds are traceable. Convention:
    major.minor.patch — patch = small fix, minor = new feature, major = big rework.
    The version is shown at the bottom of the shop AND stamped onto every order. */
-const SHOP_VERSION = "2.4.3-email-retry";
+const SHOP_VERSION = "2.4.4-supplies-at-checkout";
 const SHOP_BUILD = "2026-07-13";
 
 /* ---- Supabase (same project/key as the tracker) --------------------------- */
@@ -816,7 +816,7 @@ function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock, vial
   const [catFilter, setCatFilter] = useState("all");
   const shopSubtotal = products.reduce((a, p) => a + (cart[p.id] || 0) * (p.price || 0), 0);
   const filtered = products.filter((p) => !q || (p.name + " " + p.desc).toLowerCase().includes(q.toLowerCase()));
-  const present = SHOP_CATS.filter((c) => filtered.some((p) => categoryOf(p) === c));
+  const present = SHOP_CATS.filter((c) => c !== "Supplies" && filtered.some((p) => categoryOf(p) === c));  // supplies (needles + BAC water) live only at checkout now
   const shown = catFilter === "all" || !present.includes(catFilter) ? present : [catFilter];
   return (
     <div>
@@ -886,6 +886,10 @@ function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock, vial
       {filtered.length === 0 && (
         <div style={{ color: C.textDim, textAlign: "center", padding: "40px 0" }}>No products match “{q}”.</div>
       )}
+      <div style={{ marginTop: 10, background: C.surface, border: `1px dashed ${C.tealDim}`, borderRadius: 12, padding: "13px 15px", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: C.textDim, lineHeight: 1.4 }}>
+        <span style={{ fontSize: 18, flexShrink: 0 }}>💧</span>
+        <span>Need <b style={{ color: C.text }}>needles</b>, <b style={{ color: C.text }}>BAC water</b>, or <b style={{ color: C.text }}>reconstitution</b>? You'll add those at checkout — no need to hunt for them here.</span>
+      </div>
     </div>
   );
 }
