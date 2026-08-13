@@ -549,6 +549,43 @@ function App() {
   const [stock, setStock] = useState(null);         // { p01: {onHand, reserved, available, inbound} } | null while loading
   const [products, setProducts] = useState(null);   // null = not loaded yet. NEVER a typed list.
   const [catalogFailed, setCatalogFailed] = useState(false);
+  const [prefill, setPrefill] = useState(null);     // { added, missed, from } when arriving from a ?cart= link
+
+  /* ---- ARRIVING WITH A CART ------------------------------------------------
+     Ask Tara and the Protocol Builder work out exactly which vials a cycle needs,
+     then link here as  ?cart=TJ-RETA-40:1,TJ-RETA-30:1&from=builder
+     We fill the basket so nobody has to re-pick it by hand and get it wrong —
+     but it is an ORDINARY cart from that moment on: change quantities, remove
+     things, add extras, and enter your own details at checkout. No account, no
+     login, nothing locked. Runs once, after the catalogue has loaded, because
+     the cart is keyed by product id and only the catalogue knows the mapping. */
+  useEffect(() => {
+    if (!products || prefill) return;
+    let raw = "", from = "";
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      raw = sp.get("cart") || ""; from = (sp.get("from") || "").toLowerCase();
+    } catch (e) { return; }
+    if (!raw) return;
+    const bySku = {};
+    products.forEach((p) => { if (p.sku_code) bySku[String(p.sku_code).toUpperCase()] = p; });
+    const next = {}; let added = 0; const missed = [];
+    raw.split(",").forEach((part) => {
+      const bits = String(part).trim().split(":");
+      const sku = (bits[0] || "").trim().toUpperCase();
+      let qty = parseInt(bits[1], 10); if (!Number.isFinite(qty) || qty < 1) qty = 1;
+      qty = Math.min(qty, 99);
+      if (!sku) return;
+      const prod = bySku[sku];
+      if (!prod) { missed.push(sku); return; }
+      next[prod.id] = (next[prod.id] || 0) + qty;
+      added += qty;
+    });
+    if (added > 0) setCart((c) => ({ ...c, ...next }));
+    setPrefill({ added: added, missed: missed, from: from });
+    // drop the query string so a refresh does not stack the same items again
+    try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
+  }, [products, prefill]);
 
   // Load live inventory, open orders, and inbound POs, then build the per-product stock map.
   useEffect(() => {
@@ -726,6 +763,29 @@ function App() {
       </header>
 
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 120px" }}>
+        {prefill && prefill.added > 0 && (
+          <div style={{ border: "1px solid #cfe0d5", background: "#f1f7f3", borderRadius: 12,
+                        padding: "13px 15px", marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, color: "#173229", fontSize: 15 }}>
+              {prefill.from === "tara" ? "Tara put your cycle in the basket" : "Your protocol is in the basket"}
+            </div>
+            <div style={{ fontSize: 13.5, color: "#4a5b51", marginTop: 3, lineHeight: 1.5 }}>
+              {prefill.added} item{prefill.added === 1 ? "" : "s"} added — everything the cycle you planned needs.
+              Change anything you like before you check out, and add your details at the end as usual.
+              {prefill.missed && prefill.missed.length > 0 && (
+                <span style={{ display: "block", marginTop: 5, color: "#9a6a2a" }}>
+                  {prefill.missed.length} item{prefill.missed.length === 1 ? "" : "s"} from that plan
+                  {prefill.missed.length === 1 ? " is" : " are"} not currently on the shop — have a look below or ask us.
+                </span>
+              )}
+            </div>
+            <button type="button" onClick={() => { setCart({}); setPrefill(null); }}
+              style={{ marginTop: 9, background: "transparent", border: "1px solid #cfe0d5",
+                       borderRadius: 20, padding: "5px 12px", fontSize: 12.5, color: "#4a5b51", cursor: "pointer" }}>
+              Start with an empty basket instead
+            </button>
+          </div>
+        )}
         {catalogFailed && <CatalogUnavailable />}
         {!catalogFailed && products === null && <CatalogSkeleton />}
         {products !== null && stage === "shop" && (
