@@ -39,7 +39,11 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  </head>
+  <!-- Site banner. The message lives in the database (store.tj_banner_v1), not here,
+     so a closure, a sale or an announcement goes up without a deploy. The Hub loads
+     the same file, so both sites always say the same thing. -->
+<script src="https://tjwellnesscircle.ca/banner.js" defer></script>
+</head>
   <body>
     <div id="root">
       <div id="boot">
