@@ -123,6 +123,26 @@ const store = {
     if (error) throw error;
     return data?.value ?? [];
   },
+
+  /* ---- Cost never comes through this page either --------------------------
+     tj_prd_v1 carries `landed` — what T&J pays — on every product. tj_inv_v3
+     carries landed_override on every lot. tj_po_v1 carries kitUSD, freight, the
+     FX rate and supplier names. On a publishable key that is all public: anyone
+     could read the margins and who supplies them.
+
+     The Shop needs sell prices, stock levels and inbound quantities. These three
+     views pass everything through EXCEPT the cost fields, so nothing here had to
+     change except where the data is fetched from. Verified before the switch:
+     same 39 products / 86 lots / 8 POs, 977 vials both sides, kits intact.
+     ---------------------------------------------------------------------- */
+  async _viewArray(view) {
+    const { data, error } = await sb().from(view).select("value").maybeSingle();
+    if (error) throw error;
+    return data?.value ?? [];
+  },
+  getShopProducts()  { return this._viewArray("tj_v_shop_products"); },
+  getShopInventory() { return this._viewArray("tj_v_shop_inventory"); },
+  getShopInbound()   { return this._viewArray("tj_v_shop_inbound"); },
   async placeOrder(order) {
     const { data, error } = await sb().rpc("tj_shop_place_order", { p_order: order });
     if (error) throw error;
@@ -655,7 +675,7 @@ function App() {
     (async () => {
       try {
         const [inv, orders, pos, prd, pricing] = await Promise.all([
-          store.get("tj_inv_v3"), store.getShopOrders(), store.get("tj_po_v1"), store.get("tj_prd_v1"),
+          store.getShopInventory(), store.getShopOrders(), store.getShopInbound(), store.getShopProducts(),
           store.get("tj_pricing_v1"),
         ]);
         if (!alive) return;
