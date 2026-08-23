@@ -299,6 +299,29 @@ const COMPOUND_DESC = {
 };
 function compoundDesc(base, fallback) { return COMPOUND_DESC[base] || fallback || ""; }
 
+/* ---- Per-size buying guidance -------------------------------------------
+   Copy AUTHORED by the Digital & Growth executive — dosing guidance in front of
+   a customer is theirs to word. WRITTEN HERE VERBATIM by Operations, because
+   this file is Operations'. Approved by Jason 2026-08-23. Do not reword either
+   line without going back through Digital (_handoff/FROM-DIGITAL.md).
+
+   Why it exists: the Shop groups a compound's sizes on one card, and the 20mg
+   is the better per-milligram buy — so a first-time buyer picks it on price and
+   then finds a 0.2mg starting dose draws about 3 units, which is not reliably
+   measurable. The Protocol Builder already routes people correctly, but that
+   only protects anyone who arrived through the Builder. Someone browsing the
+   Shop got nothing. Numbers verified against catalog_content.dosing:
+   TJ-CJCIPA-10 is 10mg/3ml = 3.33mg/ml (0.2mg = 6u), TJ-CJCIPA-20 is
+   20mg/3ml = 6.67mg/ml (0.2mg = 3u). No prices in the copy — those move.
+   -------------------------------------------------------------------------- */
+const SKU_NOTES = {
+  "TJ-CJCIPA-10": "The one to start on. That 0.2mg opening dose draws 6 units here, which is comfortable to measure. Step up to the 20mg once you're running 0.4mg or more.",
+  "TJ-CJCIPA-20": "Starting out? Take the 10mg first. Everyone begins around 0.2mg, which is only about 3 units on this vial and 6 on the smaller one \u2014 twice as easy to draw accurately. This is the vial to move to once you're at 0.4mg and above.",
+};
+function skuNote(sku) {
+  return SKU_NOTES[String((sku && sku.sku_code) || "").trim().toUpperCase()] || "";
+}
+
 /* ---- Deep links into the Resource Hub (trust + learn at the point of sale) -
    COA badge → the Hub's Test Results panel; Learn → the compound reference.
    The Hub honours these #hashes (added in the Hub redesign). */
@@ -989,6 +1012,7 @@ function groupByCompound(list) {
 
 /* one size line inside a compound card: label · price · live stock · add/stepper */
 function SizeRow({ sku, qty, setQty, st, single }) {
+  const note = skuNote(sku);
   const known = st && typeof st.available === "number";
   const available = known ? st.available : null;
   const inbound = known ? st.inbound : 0;
@@ -1000,6 +1024,7 @@ function SizeRow({ sku, qty, setQty, st, single }) {
   else if (available > 0) stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.green }}>{dot(C.green)}{available} in stock</span>;
   else stockLine = <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: C.amber }}>{dot(C.amber)}Out{inbound > 0 ? " · restocking" : ""}</span>;
   return (
+    <div>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: qty > 0 ? "rgba(60,186,125,.07)" : C.bg, border: `1px solid ${qty > 0 ? C.tealDim : C.lineSoft}`, borderRadius: 11, padding: "9px 11px", opacity: blocked ? 0.6 : 1 }}>
       <div style={{ minWidth: 0 }}>
         <span style={{ fontFamily: MONO, fontWeight: 500, fontSize: 13.5, color: C.text }}>{sizeLabel(sku)}</span>
@@ -1019,6 +1044,13 @@ function SizeRow({ sku, qty, setQty, st, single }) {
           </div>
         )}
       </div>
+    </div>
+    {note && (
+      <div style={{ display: "flex", gap: 7, alignItems: "flex-start", margin: "6px 3px 2px", color: C.textDim, fontSize: 12, lineHeight: 1.45 }}>
+        <span aria-hidden style={{ color: C.teal, flexShrink: 0, fontWeight: 700, lineHeight: 1.35 }}>\u203A</span>
+        <span>{note}</span>
+      </div>
+    )}
     </div>
   );
 }
