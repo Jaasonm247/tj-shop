@@ -98,6 +98,38 @@ const store = {
     const { error } = await sb().from("store").upsert({ name, value }, { onConflict: "name" });
     if (error) throw error;
   },
+
+  /* ---- Orders never come through this page in the raw ----------------------
+     store.tj_ord_v3 and tj_pending_v1 carry customer names, delivery addresses,
+     phone numbers and payment details. This page runs on a publishable key that
+     is printed in its own source, so whatever that key can read, anyone can read.
+
+     The Shop only ever needed: closed, orderNum, and per line sku / sku_code /
+     qty / picked / pickedQty. That is exactly what tj_v_shop_orders returns and
+     nothing else. Audited against stockReserved() before the switch — identical
+     line count and identical reserved total, 2026-08-23.
+
+     Placing an order used to mean reading the WHOLE pending queue into the
+     customer's browser and writing it back with theirs on top. That handed every
+     shopper every other pending customer's details, and dropped an order whenever
+     two people checked out at once — the same lost-update that destroyed orders
+     50, 51 and 53 in the Tracker. tj_shop_place_order() now does it server-side in
+     one statement and returns the order number it assigned.
+
+     If you ever need another order field here, add it to the VIEW deliberately.
+     Do not go back to reading tj_ord_v3. ----------------------------------- */
+  async getShopOrders() {
+    const { data, error } = await sb().from("tj_v_shop_orders").select("value").maybeSingle();
+    if (error) throw error;
+    return data?.value ?? [];
+  },
+  async placeOrder(order) {
+    const { data, error } = await sb().rpc("tj_shop_place_order", { p_order: order });
+    if (error) throw error;
+    const n = parseInt(data, 10);
+    if (!Number.isFinite(n)) throw new Error("no order number returned");
+    return n;
+  },
 };
 
 /* ---- Live stock: on-hand, reserved, inbound (matches the tracker's math) --- */
@@ -623,7 +655,7 @@ function App() {
     (async () => {
       try {
         const [inv, orders, pos, prd, pricing] = await Promise.all([
-          store.get("tj_inv_v3"), store.get("tj_ord_v3"), store.get("tj_po_v1"), store.get("tj_prd_v1"),
+          store.get("tj_inv_v3"), store.getShopOrders(), store.get("tj_po_v1"), store.get("tj_prd_v1"),
           store.get("tj_pricing_v1"),
         ]);
         if (!alive) return;
@@ -673,20 +705,13 @@ function App() {
     if (!canPlace) return;
     setSubmitting(true);
     /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order numbers shared with the Tracker (never revert to Date.now) ===== */
-    // Next order number in the ONE shared sequence used by the Tracker. Read both the order
-    // book (tj_ord_v3) and the pending queue (tj_pending_v1) so Shop + Tracker never diverge.
-    let orderNum;
-    try {
-      const [ordArr, pendArr] = await Promise.all([store.get("tj_ord_v3"), store.get(PENDING_KEY)]);
-      const nums = [...(Array.isArray(ordArr) ? ordArr : []), ...(Array.isArray(pendArr) ? pendArr : [])]
-        .map((o) => parseInt(o && o.orderNum, 10)).filter(Number.isFinite);
-      orderNum = (nums.length ? Math.max(...nums) : 0) + 1;
-    } catch (e) {
-      orderNum = Number(String(Date.now()).slice(-6));
-    }
+    // The order number is assigned by tj_shop_place_order() in the same statement that
+    // queues the order, so two people checking out at once can no longer be handed the
+    // same number — and this page never reads the order book to work it out.
+    let orderNum = null;
     /* ===== END T&J BACKEND ===== */
     const order = {
-      orderNum, date: todayISO(),
+      date: todayISO(),
       customer: { name: name.trim(), email: email.trim(), phone: phone.trim() },
       fulfil, address: fulfil === "pickup" ? "" : address.trim(),
       payment, pickDate: fulfil === "pickup" ? pickDate : "",
@@ -707,10 +732,10 @@ function App() {
       shopVersion: SHOP_VERSION,
     };
     try {
-      // 1) queue into the tracker's pending list
-      const cur = await store.get(PENDING_KEY);
-      const arr = Array.isArray(cur) ? cur : [];
-      await store.set(PENDING_KEY, [order, ...arr]);
+      // 1) queue into the tracker's pending list — server-side, one statement,
+      //    and it hands back the order number it assigned.
+      orderNum = await store.placeOrder(order);
+      order.orderNum = orderNum;
       // 2) email notification (best-effort)
       const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
       const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
