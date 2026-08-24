@@ -435,6 +435,8 @@ function catalogFrom(prd) {
       isKit: x.isKit === true, components: x.components || null,
       component_skus: x.component_skus || null, desc: x.desc || "",
       prebuy: x.prebuy === true || x.prebuy === "true",
+      no_discount: x.no_discount === true || x.no_discount === "true",
+      is_new: x.is_new === true || x.is_new === "true",
     });
   });
   return out.length ? out : null;
@@ -707,8 +709,17 @@ function App() {
   const recon = reconVialsChosen > 0;
   useEffect(() => { if (recon && fulfil === "shipping") setFulfil("pickup"); }, [recon]); // reconstituted orders can't ship
   const goods = subtotal + reconFee;
-  const discAmt = disc ? +(goods * disc.pct / 100).toFixed(2) : 0;
-  const cashAmt = payment === "cash" ? +((goods * CASH_PCT) / 100).toFixed(2) : 0;
+  // ---- Full-price lines -----------------------------------------------------
+  // A product flagged no_discount is sold at list: no volume tier, no cash 5%.
+  // It STILL counts toward the subtotal that qualifies the basket for a tier, so
+  // the rest of the cart is unaffected — it simply is not discounted itself.
+  // Must mirror orderCalc() in the Tracker exactly, or the Shop and the order book
+  // will disagree about what the customer owes.
+  const noDiscTotal = +items.filter((it) => it.no_discount)
+    .reduce((a, it) => a + (Number(it.price) || 0) * (Number(it.qty) || 0), 0).toFixed(2);
+  const discountable = Math.max(0, +(goods - noDiscTotal).toFixed(2));
+  const discAmt = disc ? +(discountable * disc.pct / 100).toFixed(2) : 0;
+  const cashAmt = payment === "cash" ? +((discountable * CASH_PCT) / 100).toFixed(2) : 0;
   const rawTotal = +(goods - discAmt - cashAmt + deliveryFee).toFixed(2);
   const total = payment === "cash" ? Math.floor(rawTotal) : rawTotal;
   const roundAdj = payment === "cash" ? +(rawTotal - total).toFixed(2) : 0;
@@ -742,7 +753,7 @@ function App() {
         recon ? `Reconstitution ${reconVialsChosen}×$${RECON_PER_VIAL} (+${money(reconFee)})` : "",
       ].filter(Boolean).join(" · "),
       items: items.map((it) => ({ id: it.id, name: it.name, unit: it.unit, qty: it.qty, price: it.price })),
-      sub: subtotal, disc: discAmt, cashDisc: cashAmt, total,
+      sub: subtotal, disc: discAmt, cashDisc: cashAmt, total, fullPrice: noDiscTotal,
       discount: disc ? { pct: disc.pct, label: disc.label } : null,
       cashDiscount: cashAmt > 0 ? { pct: CASH_PCT, amount: cashAmt } : null,
       deliveryFee,
@@ -868,7 +879,7 @@ function App() {
         )}
         {products !== null && stage === "checkout" && (
           <CheckoutScreen products={products}
-            items={items} subtotal={subtotal} disc={disc} discAmt={discAmt} cashAmt={cashAmt} roundAdj={roundAdj}
+            items={items} subtotal={subtotal} disc={disc} discAmt={discAmt} cashAmt={cashAmt} roundAdj={roundAdj} noDiscTotal={noDiscTotal}
             deliveryFee={deliveryFee} total={total} setQty={setQty}
             name={name} setName={setName} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone}
             fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
@@ -1118,6 +1129,14 @@ function CompoundCard({ grp, cart, setQty, stock }) {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontFamily: SERIF, fontWeight: 700, fontSize: 20, lineHeight: 1.1, color: C.text }}>{grp.base}</span>
+            {grp.skus.some((s) => s.is_new) && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0,
+                             background: C.teal, color: "#04140c", borderRadius: 999,
+                             padding: "2px 8px 2px 6px", fontFamily: MONO, fontSize: 9.5,
+                             fontWeight: 700, letterSpacing: ".08em", whiteSpace: "nowrap" }}>
+                <span aria-hidden style={{ fontSize: 11, lineHeight: 1 }}>{"\u2605"}</span>NEW
+              </span>
+            )}
             {multi && <span style={{ fontFamily: MONO, fontSize: 10, color: C.textDim }}>{grp.skus.length} sizes</span>}
           </div>
           <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 4, lineHeight: 1.45 }}>{desc}</div>
@@ -1263,7 +1282,7 @@ function Stepper({ label, onClick }) {
 
 /* ----------------------------- CHECKOUT SCREEN ----------------------------- */
 function CheckoutScreen(props) {
-  const { items, subtotal, disc, discAmt, cashAmt, roundAdj, deliveryFee, total, setQty,
+  const { items, subtotal, disc, discAmt, cashAmt, roundAdj, deliveryFee, total, setQty, noDiscTotal,
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
     recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
@@ -1454,6 +1473,9 @@ function CheckoutScreen(props) {
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, marginBottom: 16 }}>
         <Row k="Subtotal" v={money(subtotal)} />
         {reconFee > 0 && <Row k={`Reconstitution (${reconVialsChosen} ${reconVialsChosen === 1 ? "vial" : "vials"})`} v={money(reconFee)} />}
+        {noDiscTotal > 0 && (disc || cashAmt > 0) && (
+          <Row k="Full price (no discount)" v={money(noDiscTotal)} />
+        )}
         {disc && <Row k={disc.label} v={`−${money(discAmt)}`} accent={C.green} />}
         {deliveryFee > 0 && <Row k={fulfil === "shipping" ? "Shipping" : "Delivery"} v={money(deliveryFee)} />}
         {cashAmt > 0 && <Row k={`Cash discount (${CASH_PCT}%)`} v={`−${money(cashAmt)}`} accent={C.green} />}
