@@ -671,6 +671,31 @@ function App() {
     try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
   }, [products, prefill]);
 
+  /* ---- ?product=SKU deep link ----------------------------------------------
+     The banner links to shop?product=TJ-GLOWTOX-50. Without this the visitor lands
+     at the top of a long catalogue and has to hunt for it, which is exactly the
+     complaint. Waits for the catalogue to render, scrolls the matching card into
+     view and rings it briefly so the eye lands on the right thing. Falls through
+     silently if the SKU is unknown or hidden — a bad link must never be an error. */
+  useEffect(() => {
+    if (!products || !products.length) return;
+    let sku = "";
+    try { sku = (new URLSearchParams(window.location.search).get("product") || "").trim().toUpperCase(); } catch (e) { return; }
+    if (!sku) return;
+    const t = setTimeout(() => {
+      const card = [...document.querySelectorAll("[data-skus]")]
+        .find((el) => (el.getAttribute("data-skus") || "").toUpperCase().split(",").includes(sku));
+      if (!card) return;
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      const prev = card.style.boxShadow;
+      card.style.transition = "box-shadow .4s";
+      card.style.boxShadow = `0 0 0 2px ${C.teal}, 0 0 26px ${C.teal}55`;
+      setTimeout(() => { card.style.boxShadow = prev || "none"; }, 2600);
+      try { window.history.replaceState({}, "", window.location.pathname); } catch (e) {}
+    }, 350);
+    return () => clearTimeout(t);
+  }, [products]);
+
   // Load live inventory, open orders, and inbound POs, then build the per-product stock map.
   useEffect(() => {
     let alive = true;
@@ -847,6 +872,8 @@ function App() {
           )}
         </div>
       </header>
+
+      <TopBanner />
 
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 120px" }}>
         {prefill && prefill.added > 0 && (
@@ -1112,6 +1139,71 @@ function SizeRow({ sku, qty, setQty, st, single }) {
 }
 
 /* ONE card per compound — molecule blurb up top, sizes only where price shows */
+/* ---- Top banner ------------------------------------------------------------
+   Renders store.tj_banner_v1, which the Digital executive owns and edits. Their
+   copy, my rendering. It was already enabled with GlowTox copy but nothing showed,
+   because the Shop only ever had a <script src> to banner.js on the Hub domain and
+   no mount point of its own. Reading the record directly removes that dependency:
+   anything they change appears here within a page load, no deploy from either side.
+   Honours enabled, show_from / show_until (yyyy-mm-dd, inclusive), tone and
+   dismissible. link_url may deep-link with ?product=SKU, handled below.
+   ---------------------------------------------------------------------------- */
+const BANNER_TONE = { notice: "#3cba7d", warn: "#f5c96a", sale: "#e8b64c" };
+
+function TopBanner() {
+  const [b, setB] = useState(null);
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const v = await store.get("tj_banner_v1");
+        if (!alive || !v || v.enabled !== true) return;
+        const today = new Date().toISOString().slice(0, 10);
+        if (v.show_from && today < v.show_from) return;      // inclusive
+        if (v.show_until && today > v.show_until) return;    // inclusive
+        setB(v);
+      } catch (e) { /* a banner is never worth breaking the shop for */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const key = b ? "tj_banner_seen_" + encodeURIComponent((b.headline || "") + "|" + (b.show_from || "")) : "";
+  useEffect(() => { if (b && b.dismissible) { try { if (localStorage.getItem(key)) setGone(true); } catch (e) {} } }, [b, key]);
+  if (!b || gone) return null;
+  const cc = BANNER_TONE[b.tone] || BANNER_TONE.notice;
+  const dismiss = () => { setGone(true); try { localStorage.setItem(key, "1"); } catch (e) {} };
+  return (
+    <div style={{ background: `linear-gradient(180deg, ${cc}1f, ${cc}0d)`, borderBottom: `1px solid ${cc}55` }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "13px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          {b.headline && (
+            <div style={{ fontFamily: SERIF, fontWeight: 700, fontSize: 17, lineHeight: 1.2, color: C.text }}>
+              {b.headline}
+            </div>
+          )}
+          {b.body && (
+            <div style={{ color: C.textDim, fontSize: 13, lineHeight: 1.5, marginTop: 5 }}>{b.body}</div>
+          )}
+          {b.link_url && (
+            <a href={b.link_url}
+               style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10,
+                        background: cc, color: "#0a1610", textDecoration: "none",
+                        borderRadius: 999, padding: "9px 16px", minHeight: 40,
+                        fontFamily: FONT, fontWeight: 700, fontSize: 13.5 }}>
+              {b.link_text || "See it"} <span aria-hidden>{"\u2192"}</span>
+            </a>
+          )}
+        </div>
+        {b.dismissible && (
+          <button onClick={dismiss} aria-label="Dismiss"
+            style={{ background: "transparent", border: "none", color: C.textDim, cursor: "pointer",
+                     fontSize: 20, lineHeight: 1, padding: "2px 4px", flexShrink: 0, minHeight: 32 }}>{"\u00d7"}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CompoundCard({ grp, cart, setQty, stock }) {
   const first = grp.skus[0];
   const cat = categoryOf(first);
@@ -1120,7 +1212,8 @@ function CompoundCard({ grp, cart, setQty, stock }) {
   const anyInCart = grp.skus.some((s) => (cart[s.id] || 0) > 0);
   const multi = grp.skus.length > 1;
   return (
-    <div style={{ position: "relative", overflow: "hidden", background: C.surface, border: `1px solid ${anyInCart ? C.tealDim : C.lineSoft}`, borderRadius: 18, padding: 14, transition: "border-color .15s" }}>
+    <div data-skus={grp.skus.map((s) => s.sku_code || "").join(",")}
+      style={{ position: "relative", overflow: "hidden", background: C.surface, border: `1px solid ${anyInCart ? C.tealDim : C.lineSoft}`, borderRadius: 18, padding: 14, transition: "border-color .15s" }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: m.cc }} />
       <div style={{ display: "flex", gap: 13, alignItems: "flex-start" }}>
         <div style={{ width: 66, height: 66, flexShrink: 0, borderRadius: 14, background: `radial-gradient(circle at 50% 26%, ${m.cb}, #0a1610)`, border: `1px solid ${C.lineSoft}`, display: "grid", placeItems: "center" }}>
