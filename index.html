@@ -873,8 +873,6 @@ function App() {
         </div>
       </header>
 
-      <TopBanner />
-
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "18px 16px 120px" }}>
         {prefill && prefill.added > 0 && (
           <div style={{ border: "1px solid #cfe0d5", background: "#f1f7f3", borderRadius: 12,
@@ -1139,70 +1137,20 @@ function SizeRow({ sku, qty, setQty, st, single }) {
 }
 
 /* ONE card per compound — molecule blurb up top, sizes only where price shows */
-/* ---- Top banner ------------------------------------------------------------
-   Renders store.tj_banner_v1, which the Digital executive owns and edits. Their
-   copy, my rendering. It was already enabled with GlowTox copy but nothing showed,
-   because the Shop only ever had a <script src> to banner.js on the Hub domain and
-   no mount point of its own. Reading the record directly removes that dependency:
-   anything they change appears here within a page load, no deploy from either side.
-   Honours enabled, show_from / show_until (yyyy-mm-dd, inclusive), tone and
-   dismissible. link_url may deep-link with ?product=SKU, handled below.
-   ---------------------------------------------------------------------------- */
-const BANNER_TONE = { notice: "#3cba7d", warn: "#f5c96a", sale: "#e8b64c" };
+/* ---- Banner ---------------------------------------------------------------
+   The Shop does NOT render its own banner. store.tj_banner_v1 is rendered by
+   banner.js, served from the Hub domain and already loaded by the <script> tag in
+   this file's head — it injects itself ABOVE the sticky header on both sites.
+   Digital owns that record and that script.
 
-function TopBanner() {
-  const [b, setB] = useState(null);
-  const [gone, setGone] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const v = await store.get("tj_banner_v1");
-        if (!alive || !v || v.enabled !== true) return;
-        const today = new Date().toISOString().slice(0, 10);
-        if (v.show_from && today < v.show_from) return;      // inclusive
-        if (v.show_until && today > v.show_until) return;    // inclusive
-        setB(v);
-      } catch (e) { /* a banner is never worth breaking the shop for */ }
-    })();
-    return () => { alive = false; };
-  }, []);
-  const key = b ? "tj_banner_seen_" + encodeURIComponent((b.headline || "") + "|" + (b.show_from || "")) : "";
-  useEffect(() => { if (b && b.dismissible) { try { if (localStorage.getItem(key)) setGone(true); } catch (e) {} } }, [b, key]);
-  if (!b || gone) return null;
-  const cc = BANNER_TONE[b.tone] || BANNER_TONE.notice;
-  const dismiss = () => { setGone(true); try { localStorage.setItem(key, "1"); } catch (e) {} };
-  return (
-    <div style={{ background: `linear-gradient(180deg, ${cc}1f, ${cc}0d)`, borderBottom: `1px solid ${cc}55` }}>
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "13px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          {b.headline && (
-            <div style={{ fontFamily: SERIF, fontWeight: 700, fontSize: 17, lineHeight: 1.2, color: C.text }}>
-              {b.headline}
-            </div>
-          )}
-          {b.body && (
-            <div style={{ color: C.textDim, fontSize: 13, lineHeight: 1.5, marginTop: 5 }}>{b.body}</div>
-          )}
-          {b.link_url && (
-            <a href={b.link_url}
-               style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10,
-                        background: cc, color: "#0a1610", textDecoration: "none",
-                        borderRadius: 999, padding: "9px 16px", minHeight: 40,
-                        fontFamily: FONT, fontWeight: 700, fontSize: 13.5 }}>
-              {b.link_text || "See it"} <span aria-hidden>{"\u2192"}</span>
-            </a>
-          )}
-        </div>
-        {b.dismissible && (
-          <button onClick={dismiss} aria-label="Dismiss"
-            style={{ background: "transparent", border: "none", color: C.textDim, cursor: "pointer",
-                     fontSize: 20, lineHeight: 1, padding: "2px 4px", flexShrink: 0, minHeight: 32 }}>{"\u00d7"}</button>
-        )}
-      </div>
-    </div>
-  );
-}
+   I briefly built a second banner in here on 2026-08-24 after concluding banner.js
+   was not working. It was: my check fetched banner.js cross-origin, which CORS
+   refused, and I read that failure as "the script is dead" instead of "my test was
+   wrong". The result was two identical banners stacked on the storefront. Removed.
+
+   What DID need fixing on this side, and is kept below, is ?product=SKU — the
+   banner's link_url uses it and the Shop ignored the parameter entirely.
+   ---------------------------------------------------------------------------- */
 
 function CompoundCard({ grp, cart, setQty, stock }) {
   const first = grp.skus[0];
