@@ -225,8 +225,11 @@ function buildStockMap(inv, orders, pos, products) {
 }
 
 /* ---- Business constants --------------------------------------------------- */
-const ETRANSFER_EMAIL = "tjwellnesscircle@gmail.com";
-const PHONE = "604-516-9377";
+const ETRANSFER_EMAIL = "payment@tjwellnesscircle.ca";
+const PHONE = "778-719-0009";
+// The number is call-or-text and lands on the iPad. Both customer-facing strings
+// say "Text", so the tap target is sms:, not tel:.
+const PHONE_SMS = "sms:+1" + PHONE.replace(/-/g, "");
 const CALENDLY_PICKUP_URL = "https://calendly.com/tjwellnesscircle/t-j-product-pick-up?back=1";
 const CALENDLY_CONSULT_URL = "https://calendly.com/tjwellnesscircle/30min?back=1"; // free consult (not a pickup)
 const WEB3FORMS_KEY = "77e0dd05-adbc-48dc-b2c4-8f57a5f9acb8";
@@ -977,7 +980,7 @@ function CatalogUnavailable() {
       </div>
       <Btn onClick={() => window.location.reload()}>Retry</Btn>
       <div style={{ fontSize: 12, color: C.textDim, marginTop: 22 }}>
-        Need something now? Text {PHONE}.
+        Need something now? Text <a href={PHONE_SMS} style={{ color: C.text }}>{PHONE}</a>.
       </div>
     </div>
   );
@@ -1666,7 +1669,7 @@ function DoneScreen({ order, reset }) {
       )}
 
       <div style={{ color: C.textDim, fontSize: 13, textAlign: "center", marginBottom: 18 }}>
-        {order.customer.email ? <>A confirmation is on its way to <b style={{ color: C.text }}>{order.customer.email}</b>. </> : null}Questions? Text {PHONE}. A copy of your order is saved on this device.
+        {order.customer.email ? <>A confirmation is on its way to <b style={{ color: C.text }}>{order.customer.email}</b>. </> : null}Questions? Text <a href={PHONE_SMS} style={{ color: C.text }}>{PHONE}</a>. A copy of your order is saved on this device.
       </div>
       <Btn variant="ghost" style={{ width: "100%" }} onClick={reset}>Place another order</Btn>
     </div>
