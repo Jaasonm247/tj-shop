@@ -631,6 +631,7 @@ function App() {
   const [payment, setPayment] = useState("etransfer"); // etransfer | cash
   const [reconQty, setReconQty] = useState(0);         // vials to reconstitute (chosen on the shop screen)
   const [notes, setNotes] = useState("");
+  const [referredBy, setReferredBy] = useState("");   // ambassador attribution, see the note at the field
   const [submitting, setSubmitting] = useState(false);
   const [placed, setPlaced] = useState(null);       // finalized order for confirmation
   const [stock, setStock] = useState(null);         // { p01: {onHand, reserved, available, inbound} } | null while loading
@@ -772,6 +773,11 @@ function App() {
     const order = {
       date: todayISO(),
       customer: { name: name.trim(), email: email.trim(), phone: phone.trim() },
+      /* Stored VERBATIM and never matched here. The Shop has no business
+         knowing who the ambassadors are, so it does not look. The Tracker
+         resolves it against tj_amb_v1 when the order is accepted, and an
+         unrecognised name is flagged for a human rather than discarded. */
+      referred_by_raw: referredBy.trim(),
       fulfil, address: fulfil === "pickup" ? "" : address.trim(),
       payment, pickDate: fulfil === "pickup" ? pickDate : "",
       pickupType: fulfil === "pickup" ? pickupType : "",
@@ -797,7 +803,7 @@ function App() {
       order.orderNum = orderNum;
       // 2) email notification (best-effort)
       const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
-      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}`;
+      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}${order.referred_by_raw ? `\nReferred by: ${order.referred_by_raw}` : ""}`;
       /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ·
          retries up to 4x with keepalive so a Netlify cold start (~2s) or a transient Resend blip can't silently drop your owner notification ===== */
       (async () => {
@@ -826,7 +832,7 @@ function App() {
   }
 
   function reset() {
-    setCart({}); setNotes(""); setPlaced(null); setStage("shop");
+    setCart({}); setNotes(""); setReferredBy(""); setPlaced(null); setStage("shop");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -913,6 +919,7 @@ function App() {
             fulfil={fulfil} setFulfil={setFulfil} address={address} setAddress={setAddress}
             pickDate={pickDate} setPickDate={setPickDate} pickupType={pickupType} setPickupType={setPickupType}
             payment={payment} setPayment={setPayment} notes={notes} setNotes={setNotes}
+            referredBy={referredBy} setReferredBy={setReferredBy}
             recon={recon} reconFee={reconFee} vialCount={vialCount} reconPerVial={RECON_PER_VIAL} reconVialsChosen={reconVialsChosen} reconQty={reconQty} setReconQty={setReconQty}
             contactOk={contactOk} addressOk={addressOk} canPlace={canPlace} submitting={submitting}
             me={me} onForget={forgetMe}
@@ -1329,6 +1336,7 @@ function CheckoutScreen(props) {
   const { items, subtotal, disc, discAmt, cashAmt, roundAdj, deliveryFee, total, setQty, noDiscTotal,
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
+    referredBy, setReferredBy,
     recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
     contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
 
@@ -1504,6 +1512,21 @@ function CheckoutScreen(props) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <Choice active={payment === "etransfer"} onClick={() => setPayment("etransfer")} title="E-Transfer" sub="Details shown after you order" />
           <Choice active={payment === "cash"} onClick={() => setPayment("cash")} title="Cash — save 5%" sub="5% off your total · pay by envelope in the cash box" />
+        </div>
+      </Section>
+
+      {/* ---- WHO SENT YOU ---------------------------------------------------
+           FREE TEXT, DELIBERATELY, AND IT MUST STAY THAT WAY. A dropdown of
+           ambassador names would tell every anonymous visitor exactly who the
+           ambassadors are, and Jason's rule is that ambassadors are never told
+           who the others are. A misspelling is one field for a human to fix;
+           a leaked list cannot be un-leaked. */}
+      <Section title="Did anyone refer you? (optional)">
+        <input value={referredBy} onChange={(e) => setReferredBy(e.target.value)}
+          placeholder="Their first name" maxLength={60}
+          style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none" }} />
+        <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 7 }}>
+          If someone pointed you our way, tell us their name so we can thank them.
         </div>
       </Section>
 
