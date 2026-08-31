@@ -537,8 +537,19 @@ function Btn({ children, onClick, variant = "solid", size = "md", disabled, styl
     onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
     onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}>{children}</button>;
 }
-function Input({ value, onChange, placeholder, type = "text", style }) {
+/* AUTOFILL. 31 Aug 2026: Jason opened checkout on his phone and iOS offered
+   "AutoFill Contact" on the REFERRAL field, suggesting his own name. Tapping it
+   would have written the shopper's own name into "did anyone refer you", and
+   every self-referral would have looked like a real one.
+   The cause was that NOT ONE input in this file declared autoComplete, so Safari
+   was guessing which field wanted a contact and guessing wrong. The fix is to
+   tell it: the shopper's own fields say what they are and autofill properly,
+   and the referral field says off. */
+function Input({ value, onChange, placeholder, type = "text", style,
+                 autoComplete, inputMode, name, autoCapitalize, autoCorrect, spellCheck }) {
   return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type}
+    autoComplete={autoComplete} inputMode={inputMode} name={name}
+    autoCapitalize={autoCapitalize} autoCorrect={autoCorrect} spellCheck={spellCheck}
     style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10,
       color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none", ...style }} />;
 }
@@ -1031,7 +1042,7 @@ function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock, vial
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.teal} strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z" /></svg>
         <div><b>Comparing prices?</b> Check the vial size first — ours are often larger. Find the same size cheaper and we'll match it.</div>
       </div>
-      <Input value={q} onChange={setQ} placeholder="Search products…" style={{ marginBottom: 16 }} />
+      <Input value={q} onChange={setQ} placeholder="Search products…" autoComplete="off" spellCheck={false} style={{ marginBottom: 16 }} />
 
       {present.length > 1 && (
         <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, marginBottom: 16, WebkitOverflowScrolling: "touch" }}>
@@ -1436,13 +1447,15 @@ function CheckoutScreen(props) {
       <Section title="Your details">
         <div style={{ marginBottom: 12 }}>
           <Label>Full name *</Label>
-          <Input value={name} onChange={setName} placeholder="First and last name" />
+          <Input value={name} onChange={setName} placeholder="First and last name" name="name" autoComplete="name" />
         </div>
         <div style={{ marginBottom: 8 }}>
           <Label>Email or phone * (either one is fine)</Label>
           <div style={{ display: "grid", gap: 8 }}>
-            <Input value={email} onChange={setEmail} placeholder="you@email.com" type="email" />
-            <Input value={phone} onChange={setPhone} placeholder="Phone number" type="tel" />
+            <Input value={email} onChange={setEmail} placeholder="you@email.com" type="email" name="email"
+              autoComplete="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+            <Input value={phone} onChange={setPhone} placeholder="Phone number" type="tel" name="tel"
+              autoComplete="tel" inputMode="tel" />
           </div>
         </div>
         {!contactOk && (name || email || phone) && (
@@ -1500,6 +1513,7 @@ function CheckoutScreen(props) {
           <div style={{ marginTop: 12 }}>
             <Label>{fulfil === "shipping" ? "Ship-to address *" : "Delivery address *"}</Label>
             <Input value={address} onChange={setAddress} placeholder="Street, city, postal code"
+              name="street-address" autoComplete="street-address"
               style={!address.trim() ? { border: `1.5px solid ${C.red}`, background: "rgba(214,69,69,0.07)" } : {}} />
             {!address.trim() && <div style={{ color: C.red, fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>Enter your {fulfil === "shipping" ? "shipping" : "delivery"} address to place the order.</div>}
             <div style={{ color: C.textDim, fontSize: 12, marginTop: 6 }}>{fulfil === "shipping" ? "We ship dry product, unmixed peptides and bac water. Reconstitute on arrival and refrigerate." : `Delivery is Tri-Cities and Abbotsford only, flat ${money(DELIVERY_FEE)}. We'll message you to set a time that works for both of us.`}</div>
@@ -1521,18 +1535,45 @@ function CheckoutScreen(props) {
            ambassadors are, and Jason's rule is that ambassadors are never told
            who the others are. A misspelling is one field for a human to fix;
            a leaked list cannot be un-leaked. */}
-      <Section title="Did anyone refer you? (optional)">
+      {/* GIVEN ITS OWN TREATMENT ON PURPOSE. Jason, 31 Aug: it should "stand out a
+          bit more". Every other block on this page is C.surface on a hairline
+          C.lineSoft border, so this one is C.surface2 inside a real teal border
+          with a mark beside the heading — different enough to stop a thumb, quiet
+          enough that an OPTIONAL field never reads like a required one.
+          This box is the only thing that credits an ambassador. Scrolled past, the
+          referral is lost and there is no second chance to ask. */}
+      <div style={{ background: C.surface2, border: `1.5px solid ${C.tealDim}`, borderRadius: 14,
+                    padding: "14px 15px 15px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+          <svg width="19" height="19" viewBox="0 0 20 20" fill="none" style={{ flex: "none" }} aria-hidden="true">
+            <circle cx="7.6" cy="6.4" r="3.1" stroke={C.teal} strokeWidth="1.5" />
+            <path d="M2.2 16.4c0-2.7 2.4-4.6 5.4-4.6s5.4 1.9 5.4 4.6" stroke={C.teal} strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M15.6 5.2v4.4M13.4 7.4h4.4" stroke={C.teal} strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <div style={{ fontFamily: FONT, fontSize: 15.5, fontWeight: 700, color: C.text, flex: 1 }}>
+            Did anyone refer you?
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase",
+                         color: C.textDim, border: `1px solid ${C.line}`, borderRadius: 5, padding: "3px 6px", flex: "none" }}>
+            Optional
+          </span>
+        </div>
         <input value={referredBy} onChange={(e) => setReferredBy(e.target.value)}
           placeholder="Their first name" maxLength={60}
+          name="tj-referral-source" autoComplete="off"
+          autoCapitalize="words" autoCorrect="off" spellCheck={false}
+          onFocus={(e) => { e.target.style.borderColor = C.teal; }}
+          onBlur={(e) => { e.target.style.borderColor = C.line; }}
           style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none" }} />
-        <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 7 }}>
+        <div style={{ color: C.textDim, fontSize: 12.5, marginTop: 8, lineHeight: 1.45 }}>
           If someone pointed you our way, tell us their name so we can thank them.
         </div>
-      </Section>
+      </div>
 
       {/* Notes */}
       <Section title="Notes (optional)">
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything we should know…" rows={3}
+          name="tj-order-notes" autoComplete="off"
           style={{ width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px 13px", outline: "none", resize: "vertical" }} />
       </Section>
 
