@@ -1381,6 +1381,16 @@ function CheckoutScreen(props) {
     recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
     contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
 
+  /* LIVE OUTAGE, 1 Sep 2026: "cashAllowed is not defined" threw here the moment
+     anyone pressed Review order, and the screen went blank.
+     I declared cashAllowed in the CART component and used it in this one. Two
+     different components; the name was never in scope here. My tests asserted
+     the line existed in the source, which proved I had typed it and nothing
+     more - the same mistake as the picker that "did nothing" this morning.
+     It is DERIVED here rather than passed as a prop, so there is no second copy
+     to fall out of step with the parent's. */
+  const cashAllowed = fulfil === "pickup";
+
   if (items.length === 0) {
     return (
       <div style={{ textAlign: "center", padding: "60px 0", color: C.textDim }}>
