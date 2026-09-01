@@ -766,6 +766,14 @@ function App() {
   const reconFee = reconVialsChosen * RECON_PER_VIAL;
   const recon = reconVialsChosen > 0;
   useEffect(() => { if (recon && fulfil === "shipping") setFulfil("pickup"); }, [recon]); // reconstituted orders can't ship
+  /* CASH IS PICKUP ONLY. Jason 2026-09-01: "if somebody is having something
+     shipped there should be no option... so that people don't get confused when
+     it says you get five percent off."
+     He is right, and it was already producing nonsense: the cash confirmation
+     told shipped customers to have their money "ready at handoff" on an order
+     going in the mail. Nobody hands over an envelope through Canada Post. */
+  const cashAllowed = fulfil === "pickup";
+  useEffect(() => { if (!cashAllowed && payment === "cash") setPayment("etransfer"); }, [cashAllowed]);
   const goods = subtotal + reconFee;
   // ---- Full-price lines -----------------------------------------------------
   // A product flagged no_discount is sold at list: no volume tier, no cash 5%.
@@ -1043,7 +1051,7 @@ function ShopScreen({ products, cart, setQty, q, setQ, me, onForget, stock, vial
       <Hero />
       <div style={{ display: "flex", alignItems: "center", gap: 11, background: "linear-gradient(135deg,#0f3b26,#14776a)", border: `1px solid ${C.teal}`, borderRadius: 14, padding: "12px 15px", marginBottom: 14, boxShadow: "0 4px 16px rgba(20,119,106,.25)" }}>
         <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">💵</span>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#eafaf3" }}>Instant 5% off when you pay cash <span style={{ fontWeight: 500, color: "rgba(234,250,243,.82)" }}>— just choose “Cash” at checkout.</span></div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#eafaf3" }}>Instant 5% off when you pay cash <span style={{ fontWeight: 500, color: "rgba(234,250,243,.82)" }}>— on pickup orders, just choose “Cash” at checkout.</span></div>
       </div>
       {vialCount > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, background: reconVialsChosen > 0 ? "rgba(20,119,106,.14)" : C.surface, border: `1px solid ${reconVialsChosen > 0 ? C.teal : C.line}`, borderRadius: 14, padding: "12px 15px", marginBottom: 14 }}>
@@ -1492,8 +1500,8 @@ function CheckoutScreen(props) {
           <Choice active={fulfil === "shipping"} onClick={() => { if (recon) return; setFulfil("shipping"); }}
             title={subtotal >= SHIP_FREE_OVER ? "Shipping · Free" : `Shipping · from ${money(SHIP_FEE)}`}
             sub={recon ? "Not available with reconstitution, mixed vials must stay cold"
-                       : subtotal >= SHIP_FREE_OVER ? "Free regular shipping on this order"
-                       : `Free on orders over ${money(SHIP_FREE_OVER)}`} />
+                       : subtotal >= SHIP_FREE_OVER ? "Free regular mail on this order"
+                       : `Regular mail · free on orders over ${money(SHIP_FREE_OVER)}`} />
           <Choice active={fulfil === "delivery"} onClick={() => setFulfil("delivery")} title={`Delivery · ${money(DELIVERY_FEE)} flat`} sub="Tri-Cities & Abbotsford, we coordinate a time" />
         </div>
 
@@ -1540,10 +1548,11 @@ function CheckoutScreen(props) {
             <Label>How fast?</Label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 7 }}>
               <Choice active={shipSpeed === "regular"} onClick={() => setShipSpeed("regular")}
-                title={subtotal >= SHIP_FREE_OVER ? "Regular · Free" : `Regular · ${money(SHIP_FEE)}`}
-                sub="Canada Post, a few days" />
+                title={subtotal >= SHIP_FREE_OVER ? "Regular mail · Free" : `Regular mail · ${money(SHIP_FEE)}`}
+                sub="Canada Post regular mail, a few days" />
               <Choice active={shipSpeed === "expedited"} onClick={() => setShipSpeed("expedited")}
-                title={`Expedited · ${money(SHIP_EXPEDITED_FEE)}`} sub="Faster, tracked" />
+                title={`Expedited · ${money(SHIP_EXPEDITED_FEE)}`}
+                sub={`${money(SHIP_EXPEDITED_FEE)} anywhere in Canada, faster and tracked`} />
             </div>
             {/* The nudge is the whole point of the threshold: an $88 order that
                 becomes a $200 one is worth far more than the postage. */}
@@ -1571,7 +1580,10 @@ function CheckoutScreen(props) {
       <Section title="Payment">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <Choice active={payment === "etransfer"} onClick={() => setPayment("etransfer")} title="E-Transfer" sub="Details shown after you order" />
-          <Choice active={payment === "cash"} onClick={() => setPayment("cash")} title="Cash — save 5%" sub="5% off your total · pay by envelope in the cash box" />
+          <Choice active={payment === "cash"} onClick={() => setPayment("cash")} disabled={!cashAllowed}
+            title={cashAllowed ? `Cash — save ${CASH_PCT}%` : "Cash — pickup only"}
+            sub={cashAllowed ? `${CASH_PCT}% off your total · pay by envelope in the cash box`
+                             : "Switch to pickup if you want to pay cash"} />
         </div>
       </Section>
 
@@ -1678,10 +1690,13 @@ function Section({ title, children }) {
     </div>
   );
 }
-function Choice({ active, onClick, title, sub }) {
+function Choice({ active, onClick, title, sub, disabled }) {
   return (
-    <button onClick={onClick} style={{ textAlign: "left", cursor: "pointer", background: active ? C.surface2 : C.bg, border: `1.5px solid ${active ? C.teal : C.line}`, borderRadius: 12, padding: "12px 13px" }}>
-      <div style={{ fontWeight: 700, fontSize: 15, color: active ? C.teal : C.text }}>{title}</div>
+    <button onClick={disabled ? undefined : onClick} disabled={!!disabled}
+      style={{ textAlign: "left", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+               background: active && !disabled ? C.surface2 : C.bg,
+               border: `1.5px solid ${active && !disabled ? C.teal : C.line}`, borderRadius: 12, padding: "12px 13px" }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: disabled ? C.textDim : (active ? C.teal : C.text) }}>{title}</div>
       <div style={{ fontSize: 12, color: C.textDim, marginTop: 3 }}>{sub}</div>
     </button>
   );
@@ -1726,7 +1741,7 @@ function DoneScreen({ order, reset }) {
       ) : (
         <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 14, padding: 16, margin: "16px 0" }}>
           <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>1 · Cash — 5% off, pay by envelope</div>
-          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 10px", lineHeight: 1.5 }}>Your <b style={{ color: C.teal }}>5% cash discount</b> is already in the total below. Have <b style={{ color: C.teal }}>{money(order.total)}</b> in cash ready at {order.fulfil === "delivery" ? "delivery" : order.fulfil === "shipping" ? "handoff" : "pickup"}.</p>
+          <p style={{ color: C.textDim, fontSize: 14, margin: "0 0 10px", lineHeight: 1.5 }}>Your <b style={{ color: C.teal }}>5% cash discount</b> is already in the total below. Have <b style={{ color: C.teal }}>{money(order.total)}</b> in cash ready at pickup.</p>
           {order.fulfil === "pickup" ? (
             <ol style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0, paddingLeft: 18 }}>
               <li>Find your envelope in the envelope holder — it's already labelled with your <b>order #{order.orderNum}</b>, name, and amount owing.</li>
@@ -1735,7 +1750,7 @@ function DoneScreen({ order, reset }) {
               <li>Grab your order from the pickup fridge below — done!</li>
             </ol>
           ) : (
-            <p style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>Have your <b>{money(order.total)}</b> in cash ready and we'll handle the envelope with you at {order.fulfil === "delivery" ? "delivery" : "handoff"}.</p>
+            <p style={{ color: C.textDim, fontSize: 13.5, lineHeight: 1.6, margin: 0 }}>Have your <b>{money(order.total)}</b> in cash ready and we'll handle the envelope with you at pickup.</p>
           )}
         </div>
       )}
