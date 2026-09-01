@@ -233,7 +233,19 @@ const PHONE_SMS = "sms:+1" + PHONE.replace(/-/g, "");
 const CALENDLY_PICKUP_URL = "https://calendly.com/tjwellnesscircle/t-j-product-pick-up?back=1";
 const CALENDLY_CONSULT_URL = "https://calendly.com/tjwellnesscircle/30min?back=1"; // free consult (not a pickup)
 const WEB3FORMS_KEY = "77e0dd05-adbc-48dc-b2c4-8f57a5f9acb8";
-const SHIP_FEE = 20;                    // flat, dry product only (unmixed)
+/* SHIPPING. Jason 2026-08-31, after a $40 bill on a small Ontario order:
+   regular is FREE over $200 and $25 under it, expedited is $40 at any size.
+   Speed is a real extra cost and is not what the free-shipping promise covers.
+   The threshold is measured on the SAME subtotal the volume tiers use, so
+   "spend $200" earns 5% off AND free shipping together - one number to explain.
+   These are fallbacks; the live values come from tj_pricing_v1, because a
+   private copy that agrees with the database by luck is how the last three
+   pricing bugs happened. */
+let SHIP_FREE_OVER = 200;               // fallback; tj_pricing_v1.ship_free_over
+let SHIP_FEE = 25;                      // fallback; tj_pricing_v1.ship_fee
+let SHIP_EXPEDITED_FEE = 40;            // fallback; tj_pricing_v1.ship_expedited_fee
+const shipFeeFor = (sub, speed) =>
+  speed === "expedited" ? SHIP_EXPEDITED_FEE : (sub >= SHIP_FREE_OVER ? 0 : SHIP_FEE);
                                         // NOTE: no tj_pricing_v1 equivalent exists yet — still Shop-local.
 
 /* ---- Pricing comes from the database (store -> tj_pricing_v1) ---------------
@@ -266,6 +278,9 @@ function applyPricing(pricing) {
     if (clean.length) DISCOUNT_TIERS = clean;
   }
   if (Number.isFinite(Number(pricing.delivery_fee))) DELIVERY_FEE = Number(pricing.delivery_fee);
+  if (Number.isFinite(Number(pricing.ship_free_over)))      SHIP_FREE_OVER = Number(pricing.ship_free_over);
+  if (Number.isFinite(Number(pricing.ship_fee)))            SHIP_FEE = Number(pricing.ship_fee);
+  if (Number.isFinite(Number(pricing.ship_expedited_fee)))  SHIP_EXPEDITED_FEE = Number(pricing.ship_expedited_fee);
   if (Number.isFinite(Number(pricing.recon_fee)))    RECON_FEE = Number(pricing.recon_fee);
   if (Number.isFinite(Number(pricing.recon_per_vial))) RECON_PER_VIAL = Number(pricing.recon_per_vial);
   if (Number.isFinite(Number(pricing.cash_pct)))     CASH_PCT = Number(pricing.cash_pct);
@@ -636,6 +651,7 @@ function App() {
   const [email, setEmail] = useState(me?.email || "");
   const [phone, setPhone] = useState(me?.phone || "");
   const [fulfil, setFulfil] = useState("pickup");   // pickup | shipping | delivery
+  const [shipSpeed, setShipSpeed] = useState("regular");  // regular | expedited
   const [pickDate, setPickDate] = useState("");        // required for pickup
   const [pickupType, setPickupType] = useState(""); // "" (unchosen) | contactless | consult
   const [address, setAddress] = useState(me?.address || "");
@@ -739,7 +755,9 @@ function App() {
     .map(([id, qty]) => ({ ...pmap[id], qty })), [cart, pmap]);
   const subtotal = useMemo(() => items.reduce((s, it) => s + it.price * it.qty, 0), [items]);
   const disc = discountFor(subtotal);
-  const deliveryFee = fulfil === "shipping" ? SHIP_FEE : fulfil === "delivery" ? DELIVERY_FEE : 0;
+  const deliveryFee = fulfil === "shipping" ? shipFeeFor(subtotal, shipSpeed)
+                    : fulfil === "delivery" ? DELIVERY_FEE : 0;
+  const shipShortfall = Math.max(0, SHIP_FREE_OVER - subtotal);   // how close they are to free
   const vialsPerItem = (it) => (it.isKit && Array.isArray(it.components)) ? it.components.length
     : ((it.category !== "Supplies") && /vial/i.test(it.unit || "")) ? 1
     : 0;  // shop items have `unit`/`category`, not `form` — count peptide vials + stack vials, exclude supplies/nasal
@@ -789,12 +807,16 @@ function App() {
          resolves it against tj_amb_v1 when the order is accepted, and an
          unrecognised name is flagged for a human rather than discarded. */
       referred_by_raw: referredBy.trim(),
-      fulfil, address: fulfil === "pickup" ? "" : address.trim(),
+      fulfil, ship_speed: fulfil === "shipping" ? shipSpeed : "",
+      address: fulfil === "pickup" ? "" : address.trim(),
       payment, pickDate: fulfil === "pickup" ? pickDate : "",
       pickupType: fulfil === "pickup" ? pickupType : "",
       notes: [
         notes.trim(),
-        fulfil === "shipping" ? `Shipping (+${money(SHIP_FEE)})` : fulfil === "delivery" ? `Delivery (+${money(DELIVERY_FEE)})` : `Pickup ${pickDate || "TBD"} · ${pickupType === "consult" ? "consult (booking via Calendly)" : "contactless"}`,
+        fulfil === "shipping"
+          ? `Shipping ${shipSpeed === "expedited" ? "expedited" : "regular"} (+${money(deliveryFee)})`
+          : fulfil === "delivery" ? `Delivery (+${money(DELIVERY_FEE)})`
+          : `Pickup ${pickDate || "TBD"} · ${pickupType === "consult" ? "consult (booking via Calendly)" : "contactless"}`,
         recon ? `Reconstitution ${reconVialsChosen}×$${RECON_PER_VIAL} (+${money(reconFee)})` : "",
       ].filter(Boolean).join(" · "),
       items: items.map((it) => ({ id: it.id, name: it.name, unit: it.unit, qty: it.qty, price: it.price })),
@@ -814,7 +836,7 @@ function App() {
       order.orderNum = orderNum;
       // 2) email notification (best-effort)
       const summary = order.items.map((it) => `${it.name} x${it.qty} — ${money(it.price * it.qty)}`).join("\n");
-      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}${order.referred_by_raw ? `\nReferred by: ${order.referred_by_raw}` : ""}`;
+      const msg = `Order #${orderNum}\n${order.customer.name}\n${order.customer.email || ""} ${order.customer.phone || ""}\n\n${summary}\n\nSubtotal ${money(subtotal)}${disc ? `\nDiscount (${disc.label}) -${money(discAmt)}` : ""}${deliveryFee ? `\n${fulfil === "shipping" ? "Shipping" : "Delivery"} ${money(deliveryFee)}` : ""}${reconFee ? `\nReconstitution ${money(reconFee)}` : ""}${cashAmt ? `\nCash discount (${CASH_PCT}%) -${money(cashAmt)}` : ""}${roundAdj ? `\nRounded down -${money(roundAdj)}` : ""}\nTotal ${money(total)}\n\nFulfillment: ${fulfil === "shipping" ? `Shipping ${shipSpeed === "expedited" ? "EXPEDITED" : "regular"} → ${order.address}` : fulfil === "delivery" ? `Delivery → ${order.address}` : `Pickup ${pickDate || "TBD"} (${pickupType})`}\nPayment: ${payment === "etransfer" ? "E-Transfer" : "Cash"}${order.notes ? `\nNotes: ${order.notes}` : ""}${order.referred_by_raw ? `\nReferred by: ${order.referred_by_raw}` : ""}`;
       /* ===== T&J BACKEND — DO NOT EDIT OR DELETE · order email via Resend, keeps you out of junk (never revert to web3forms) ·
          retries up to 4x with keepalive so a Netlify cold start (~2s) or a transient Resend blip can't silently drop your owner notification ===== */
       (async () => {
@@ -1467,7 +1489,11 @@ function CheckoutScreen(props) {
       <Section title="How do you want it?">
         <div style={{ display: "grid", gap: 8 }}>
           <Choice active={fulfil === "pickup"} onClick={() => setFulfil("pickup")} title="Pickup · Free" sub="Maple Ridge, on a day you choose" />
-          <Choice active={fulfil === "shipping"} onClick={() => { if (recon) return; setFulfil("shipping"); }} title={`Shipping · ${money(SHIP_FEE)} flat`} sub={recon ? "Not available with reconstitution, mixed vials must stay cold" : "Dry product only, you mix on arrival"} />
+          <Choice active={fulfil === "shipping"} onClick={() => { if (recon) return; setFulfil("shipping"); }}
+            title={subtotal >= SHIP_FREE_OVER ? "Shipping · Free" : `Shipping · from ${money(SHIP_FEE)}`}
+            sub={recon ? "Not available with reconstitution, mixed vials must stay cold"
+                       : subtotal >= SHIP_FREE_OVER ? "Free regular shipping on this order"
+                       : `Free on orders over ${money(SHIP_FREE_OVER)}`} />
           <Choice active={fulfil === "delivery"} onClick={() => setFulfil("delivery")} title={`Delivery · ${money(DELIVERY_FEE)} flat`} sub="Tri-Cities & Abbotsford, we coordinate a time" />
         </div>
 
@@ -1504,6 +1530,26 @@ function CheckoutScreen(props) {
               <div style={{ marginTop: 10, background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12 }}>
                 <div style={{ color: C.text, fontSize: 14, marginBottom: 8, lineHeight: 1.4 }}>Book your consult so we can set a time on your pickup day.</div>
                 <Btn size="sm" onClick={() => { const u = new URL(CALENDLY_CONSULT_URL); if (name.trim()) u.searchParams.set("name", name.trim()); if (email.trim()) u.searchParams.set("email", email.trim()); window.open(u.toString(), "_blank", "noopener"); }}>Book consult →</Btn>
+              </div>
+            )}
+          </div>
+        )}
+
+        {fulfil === "shipping" && (
+          <div style={{ marginTop: 12 }}>
+            <Label>How fast?</Label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 7 }}>
+              <Choice active={shipSpeed === "regular"} onClick={() => setShipSpeed("regular")}
+                title={subtotal >= SHIP_FREE_OVER ? "Regular · Free" : `Regular · ${money(SHIP_FEE)}`}
+                sub="Canada Post, a few days" />
+              <Choice active={shipSpeed === "expedited"} onClick={() => setShipSpeed("expedited")}
+                title={`Expedited · ${money(SHIP_EXPEDITED_FEE)}`} sub="Faster, tracked" />
+            </div>
+            {/* The nudge is the whole point of the threshold: an $88 order that
+                becomes a $200 one is worth far more than the postage. */}
+            {shipSpeed === "regular" && shipShortfall > 0 && (
+              <div style={{ color: C.teal, fontSize: 12.5, marginTop: 8, fontWeight: 600 }}>
+                Add {money(shipShortfall)} more and regular shipping is free.
               </div>
             )}
           </div>
