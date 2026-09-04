@@ -961,6 +961,7 @@ function App() {
             pickDate={pickDate} setPickDate={setPickDate} pickupType={pickupType} setPickupType={setPickupType}
             payment={payment} setPayment={setPayment} notes={notes} setNotes={setNotes}
             referredBy={referredBy} setReferredBy={setReferredBy}
+            shipSpeed={shipSpeed} setShipSpeed={setShipSpeed}
             recon={recon} reconFee={reconFee} vialCount={vialCount} reconPerVial={RECON_PER_VIAL} reconVialsChosen={reconVialsChosen} reconQty={reconQty} setReconQty={setReconQty}
             contactOk={contactOk} addressOk={addressOk} canPlace={canPlace} submitting={submitting}
             me={me} onForget={forgetMe}
@@ -1378,6 +1379,7 @@ function CheckoutScreen(props) {
     name, setName, email, setEmail, phone, setPhone, fulfil, setFulfil,
     address, setAddress, pickDate, setPickDate, pickupType, setPickupType, payment, setPayment, notes, setNotes,
     referredBy, setReferredBy,
+    shipSpeed, setShipSpeed,
     recon, reconFee, vialCount, reconPerVial, reconVialsChosen, reconQty, setReconQty,
     contactOk, addressOk, canPlace, submitting, placeOrder, backToShop, me, onForget, products } = props;
 
@@ -1390,6 +1392,18 @@ function CheckoutScreen(props) {
      It is DERIVED here rather than passed as a prop, so there is no second copy
      to fall out of step with the parent's. */
   const cashAllowed = fulfil === "pickup";
+
+  /* SECOND OUTAGE, 4 Sep 2026. SAME MISTAKE, SAME COMPONENT, MINE AGAIN:
+     "shipSpeed is not defined" blanked the screen for anyone who chose Shipping.
+     Pickup is 71% of orders so the happy path looked fine, and the happy path is
+     exactly what I walked when I checked this file. Shipping is 9% of orders and
+     the largest ones by value. A walk that only covers the common branch is not
+     a test, it is a demo.
+     shipSpeed/setShipSpeed are STATE and are now passed as props - they cannot be
+     re-derived here because the parent computes the shipping fee from the same
+     value and the two copies would drift. shipShortfall is derived, so it is
+     computed here instead, for the same reason cashAllowed is. */
+  const shipShortfall = Math.max(0, SHIP_FREE_OVER - subtotal);
 
   if (items.length === 0) {
     return (
